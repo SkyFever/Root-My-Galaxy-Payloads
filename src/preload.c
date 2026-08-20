@@ -113,6 +113,13 @@ __attribute__((constructor)) static void load(void) {
 
   int max_attempts = env_int(
       "EXPLOIT_ATTEMPTS", DEFAULT_EXPLOIT_ATTEMPTS, 1, 64);
+#if defined(APP_FORCE_SINGLE_ATTEMPT) && APP_FORCE_SINGLE_ATTEMPT
+  if (max_attempts != 1) {
+    pr_info("diagnostic single-attempt override requested=%d effective=1\n",
+            max_attempts);
+  }
+  max_attempts = 1;
+#endif
   int base_delay = env_int(
       "PSELECT_DELAY_USEC", DEFAULT_PSELECT_DELAY_USEC, 0, 1000000);
   int attempt_timeout_sec = env_int(

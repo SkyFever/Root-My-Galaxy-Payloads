@@ -18,7 +18,7 @@ pselect result-set route: macro-gated prototype, static compile passed
 physical map / P0 table: offline proof complete
 target.h: diagnostic-only, static compile passed
 diagnostic artifact: NDK r29 / Android API 33 build complete
-hardware exploit validation: first run reached pipe oracle, then kernel panic
+hardware exploit validation: page preparation stable; RT-mutex trigger disabled
 ```
 
 The vulnerable `remove_waiter()` implementation is present in this 4.19
@@ -44,8 +44,35 @@ The KernelSU diagnostic stub was never invoked.
 The next artifact therefore enables the compile-time fresh-P0 path that the
 support JSON already required, emits KernelSnitch and reclaim checkpoints, and
 returns immediately after kernel-page preparation. It does not enter the
-pselect/RT-mutex write trigger. The supervisor is limited to one attempt so a
-failed diagnostic is not automatically repeated.
+pselect/RT-mutex write trigger.
+
+## Second hardware result
+
+The page-preparation diagnostic run captured in
+`RootMyGalaxy-20260820-192711-failed.log.txt` did not reboot or panic the
+device. Seven complete preparation cycles reached the deliberate
+`rt_mutex trigger not entered` stop before the app deadline interrupted the
+eighth cycle. Every completed cycle had all of the following properties:
+
+```text
+KernelSnitch collision confirmations: 3
+reclaim messages sent: 16/16
+leaked mm_struct object_index: 12
+RT-mutex trigger: not entered
+```
+
+The seven leaked order-3 bases and their derived fake-task/fake-lock addresses
+all translate into the verified physical RAM segments. The repeated object
+index and successful reclaim make the page-selection stage stable enough to
+pass its current hardware gate. This also narrows the first panic away from a
+simple out-of-RAM KernelSnitch candidate and toward the legacy waiter/result
+fd-set priority-chain geometry or its state at trigger time.
+
+The app supplied `EXPLOIT_ATTEMPTS=24`, which overrode the target's default of
+one and caused the safe diagnostic to repeat until the app timeout. The new
+artifact uses a target-only compile-time override that forces the supervisor
+to one attempt even when the app supplies that environment value. The
+RT-mutex trigger remains disabled.
 
 ## Connected-device identity
 
@@ -391,10 +418,10 @@ make TARGET=gts7lwifi-T870XXS8DXH1 API=33 \
 ```
 
 ```text
-artifact: artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-page-prepare.so
+artifact: artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-page-prepare-single.so
 format:   ELF64 little-endian AArch64 shared object, Android 33, stripped
 size:     104128 bytes
-SHA-256:  cc096cc502d05f043c799e5cf217ff9d2c83640946ac3cb0669f6536c6acd58f
+SHA-256:  38d527317c5bfb62bc3089a4caba3c4724122bbec1145629bbb022671396d524
 ```
 
 The diagnostic target adds hidden symbol visibility before section garbage
@@ -405,9 +432,9 @@ exact byte-for-byte copy of the verified release output.
 
 ## Remaining gates before the RT-mutex trigger is re-enabled
 
-1. Run the page-preparation diagnostic and inspect its last durable checkpoint,
-   leaked `mm_struct`, order-3 base, fake task, and fake lock addresses.
-2. Reject or constrain the KernelSnitch candidate range if the leaked base is
-   outside the verified RAM segments.
+1. Reconcile the exact 4.19 legacy `rt_mutex_waiter`, fake task PI fields, and
+   result-fdset stack placement with the `_raw_spin_trylock+0x1c` panic.
+2. Add a one-shot pre-trigger geometry check that logs every pointer consumed
+   by `rt_mutex_adjust_prio_chain` and stops before `sched_setattr`.
 3. Do not re-enable the result-fdset RT-mutex trigger, or create a root/UMH
-   profile, until the page candidate and reclaim are stable.
+   profile, until that priority-chain geometry has been validated.

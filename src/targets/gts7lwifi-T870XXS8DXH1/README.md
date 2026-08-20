@@ -13,8 +13,11 @@ legacy waiter location and passes static compilation.
 The first hardware run reached the P0 pipe oracle and then panicked in
 `_raw_spin_trylock` from `rt_mutex_adjust_prio_chain`. The current build is a
 safer page-preparation diagnostic: it enables the fresh-session path, logs
-KernelSnitch/reclaim checkpoints, and stops before the RT-mutex trigger. It is
-limited to one supervisor attempt.
+KernelSnitch/reclaim checkpoints, and stops before the RT-mutex trigger. The
+second hardware run completed this stage seven times without a reboot, always
+selecting object index 12 with all derived addresses inside verified RAM. The
+target now forces one supervisor attempt even when the app supplies
+`EXPLOIT_ATTEMPTS=24`.
 
 `p0_fingerprint.h` is a passive exact-Image table: 32 slide rows and 256
 independently verified source qwords.
@@ -37,9 +40,9 @@ make TARGET=gts7lwifi-T870XXS8DXH1 API=33 \
 The checked artifact was built with NDK r29 revision `29.0.14206865`:
 
 ```text
-artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-page-prepare.so
+artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-page-prepare-single.so
 size: 104128 bytes
-SHA-256: cc096cc502d05f043c799e5cf217ff9d2c83640946ac3cb0669f6536c6acd58f
+SHA-256: 38d527317c5bfb62bc3089a4caba3c4724122bbec1145629bbb022671396d524
 ```
 
 Post-link inspection found only the slide diagnostic stop marker and no
@@ -53,7 +56,8 @@ the normal schema-v3 selection path. The stub is unreachable in the current
 diagnostic stage.
 
 Do not copy another target's header or remove the page-prepare stop until the
-new hardware log has been reviewed.
+legacy waiter/result-fdset priority-chain geometry has been reconciled with the
+recorded `_raw_spin_trylock+0x1c` panic.
 
 See [`../../../docs/SM-T870-T870XXS8DXH1.md`](../../../docs/SM-T870-T870XXS8DXH1.md)
 for the verified values and the remaining compatibility gates.
