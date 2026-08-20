@@ -19,6 +19,10 @@ vmemmap parent, and direct-map target ranges. It then exercises the
 futex/pselect result route but stops before `sched_setattr`, so the recorded
 RT priority-chain path is not entered. The target forces one supervisor
 attempt even when the app supplies `EXPLOIT_ATTEMPTS=24`.
+The first geometry run safely rejected a checker-only mismatch between the
+stack waiter's priority 130 and the reclaimed-page waiter's priority 0. The
+route diagnostic compares each field with its own intended constant and logs
+both priorities.
 
 `p0_fingerprint.h` is a passive exact-Image table: 32 slide rows and 256
 independently verified source qwords.
@@ -42,16 +46,16 @@ make TARGET=gts7lwifi-T870XXS8DXH1 API=33 \
 The checked artifact was built with NDK r29 revision `29.0.14206865`:
 
 ```text
-artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-pretrigger-geometry.so
+artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-pretrigger-route.so
 size: 104128 bytes
-SHA-256: 0c8faeeb2b2797460c5db342afe20af2a69d180f5450d6ac1c7dcaa3ec172c87
+SHA-256: cb06149c3a6d5346d39a892b4516fc9802d1b918e09f55c5a4cca62a1b24ff01
 ```
 
 Post-link inspection found only the slide diagnostic stop marker and no
 root/UMH, misc_fops, configfs, or exported root/fops symbol markers.
 
 `support/targets-v3.json` exposes this build to `SM-T870` clients as an
-explicit pre-trigger geometry diagnostic. Its required `kernelsu` download is
+explicit pre-trigger route diagnostic. Its required `kernelsu` download is
 a non-root Android stub that exits with status 78; it is not a KernelSU build.
 This pairing exists only so the app can launch the diagnostic payload through
 the normal schema-v3 selection path. The stub is unreachable in the current

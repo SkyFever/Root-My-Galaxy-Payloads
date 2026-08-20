@@ -6,7 +6,7 @@
 #endif
 
 #define BUILD_VARIANT_LABEL \
-  "gts7lwifi-T870XXS8DXH1-app-pretrigger-geometry-diagnostic"
+  "gts7lwifi-T870XXS8DXH1-app-pretrigger-route-diagnostic"
 #define APP_PHYS_P0_ORACLE 1
 #define APP_SLIDE_DIAGNOSTIC_ONLY 1
 #define APP_REQUIRE_FRESH_P0_SESSION 1

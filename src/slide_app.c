@@ -346,7 +346,7 @@ static int slide_log_pretrigger_geometry(size_t slot) {
   const uint64_t expected[] = {
     slide_oracle_parent, 0, slide_oracle_target,
     slide_oracle_parent, 0, slide_oracle_target,
-    fake_task, fake_lock, SLIDE_FAKE_WAITER_PRIO, 0,
+    fake_task, fake_lock, FAKE_WAITER_PRIO, 0,
   };
   int words_ok = 1;
   for (size_t index = 0; index < sizeof(expected) / sizeof(expected[0]);
@@ -376,6 +376,8 @@ static int slide_log_pretrigger_geometry(size_t slot) {
           "target=%016zx\n",
           slot, page_base, fake_task, fake_task + FAKE_TASK_PI_LOCK_OFF,
           fake_lock, fake_w0, slide_oracle_parent, slide_oracle_target);
+  pr_info("p0 pretrigger priorities stack_waiter=%d page_waiter=%d\n",
+          FAKE_WAITER_PRIO, SLIDE_FAKE_WAITER_PRIO);
   pr_info("p0 pretrigger range page=%d task=%d lock_waiter=%d parent=%d "
           "target=%d words=%d\n",
           page_ok, task_ok, lock_ok, parent_ok, target_ok, words_ok);

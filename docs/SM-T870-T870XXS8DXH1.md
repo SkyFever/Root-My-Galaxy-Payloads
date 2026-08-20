@@ -108,6 +108,38 @@ fake lock, logs all ten waiter words and their pointer ranges, exercises the
 futex/pselect result route, and stops before the `sched_setattr` syscall that
 would enter this priority-chain path.
 
+## Fourth hardware result
+
+The first pre-trigger geometry run captured in
+`RootMyGalaxy-20260821-042721-failed.log.txt` used exactly one attempt and did
+not reboot or panic. Page preparation completed in 4.957 seconds with collision
+confirmations 3, reclaim 16/16, and object index 11. Its derived addresses
+again resolve into verified RAM:
+
+```text
+pipe direct map:  ffffffc1b2f80000 -> physical 0x232f80000 (RAM 2)
+page direct map:  ffffffc0cb718000 -> physical 0x14b718000 (RAM 1)
+fake task:        ffffffc0cb718180 -> physical 0x14b718180 (RAM 1)
+fake lock:        ffffffc0cb71c380 -> physical 0x14b71c380 (RAM 1)
+```
+
+All pointer-range checks passed. Waiter words 0 through 7 and word 9 matched,
+including word 7 at offset `0x38` containing the valid fake-lock address. The
+diagnostic rejected only word 8: actual `0x82`, expected `0`.
+
+That mismatch was in the checker, not the generated fd-set. The legacy stale
+pselect waiter deliberately uses `FAKE_WAITER_PRIO=130` (`0x82`), while the
+separate waiter stored in the reclaimed page uses
+`SLIDE_FAKE_WAITER_PRIO=0`. `prepare_slide_pselect_fdsets()` correctly emitted
+the former, but the geometry checker compared it with the latter. Because the
+fail-closed check rejected the slot, this run did not enter the futex/pselect
+route and did not approach `sched_setattr`.
+
+The corrected route diagnostic now compares word 8 with `FAKE_WAITER_PRIO`,
+logs both priority values explicitly, and retains the compile-time exclusion
+of the `sched_setattr` call. A new payload ID and artifact path prevent the app
+from reusing the rejected geometry binary.
+
 ## Connected-device identity
 
 ```text
@@ -453,10 +485,10 @@ make TARGET=gts7lwifi-T870XXS8DXH1 API=33 \
 ```
 
 ```text
-artifact: artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-pretrigger-geometry.so
+artifact: artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-pretrigger-route.so
 format:   ELF64 little-endian AArch64 shared object, Android 33, stripped
 size:     104128 bytes
-SHA-256:  0c8faeeb2b2797460c5db342afe20af2a69d180f5450d6ac1c7dcaa3ec172c87
+SHA-256:  cb06149c3a6d5346d39a892b4516fc9802d1b918e09f55c5a4cca62a1b24ff01
 ```
 
 The diagnostic target adds hidden symbol visibility before section garbage
