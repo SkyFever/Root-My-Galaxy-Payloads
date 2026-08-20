@@ -62,12 +62,29 @@ The stock byte at `sig_enforce` is 1. The app payload changes this data byte to
 0 before the privileged helper invokes KernelSU's late loader; it does not
 patch kernel text.
 
-The release exploit is fixed at 104128 bytes:
+The currently published diagnostic exploit is fixed at 104128 bytes:
 
 ```text
 artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
-SHA-256: 9fe9fc903005ec586b6a82af76be52178a40ebd5e87cc713e324d8df38d92408
+SHA-256: d1485355fc5e431e0db8e353b67fef9eb1ae1d7538082f5166e240815f35b374
 ```
+
+### KernelSnitch page-prepare diagnostic
+
+The 2026-08-21 12:03 hardware run stopped immediately after the
+`KernelSnitch profile` line. The next boot reported Samsung reset reason
+`KPON` and DropBox tag
+`SYSTEM_LAST_KMSG_6_20260821_120502_KP`, confirming a kernel panic rather
+than an app timeout. That run produced no pselect, P0 pipe-gate, KASLR, or
+KernelSU line, so it does not test the in-kernel pselect route.
+
+The published artifact therefore enables the existing page-prepare diagnostic
+checkpoints, KernelSnitch verbose output, and one supervisor attempt. It stops
+after `prepare_good_kernel_page(PAGE_PAYLOAD_SLIDE)` returns and never enters
+the rt-mutex, pselect, physical-write, root-helper, or KernelSU stages. The next
+hardware log must identify the last completed checkpoint among topology
+creation, collision search, mm-struct brute-force, payload construction, and
+skb reclaim before the production trigger is restored.
 
 ### Exact legacy pselect trigger window
 
@@ -92,8 +109,8 @@ result fd-set base:            syscall SP - 0x198
 waiter word zero:              result qword 1
 ```
 
-This independently confirms `SLIDE_PSELECT_WORD_SHIFT=1`. The production
-payload now follows the device-tested in-kernel route: it checks the waiter
+This independently confirms `SLIDE_PSELECT_WORD_SHIFT=1`. The full trigger
+payload now follows the stock-ELF-derived in-kernel route: it checks the waiter
 thread's same-process `/proc` syscall and wchan entries until the thread is
 blocked in `pselect6`/`do_select`, rechecks the state immediately before
 `sched_setattr`, and accepts the successful scheduler trigger while pselect is
