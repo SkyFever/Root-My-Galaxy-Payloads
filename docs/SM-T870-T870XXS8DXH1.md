@@ -16,7 +16,8 @@ symbol recovery: complete
 pselect input-set route: incompatible with this build's stack geometry
 pselect result-set route: macro-gated prototype, static compile passed
 physical map / P0 table: offline proof complete
-target.h: intentionally absent
+target.h: diagnostic-only, static compile passed
+diagnostic artifact: NDK r29 / Android API 33 build complete
 hardware exploit validation: not started
 ```
 
@@ -24,8 +25,9 @@ The vulnerable `remove_waiter()` implementation is present in this 4.19
 kernel lineage, but vulnerability presence alone does not make the repository's
 existing 5.10+ profiles safe to reuse. A macro-gated 4.19 result-fdset route
 has now been added to the shared code. The remaining gate is deliberately a
-diagnostic-only hardware validation of that route; the root/UMH profile stays
-unbuildable until that result is known.
+diagnostic-only hardware validation of that route. The target header rejects
+non-app builds, and the app returns immediately after the slide diagnostic;
+the fops, configfs, and root/UMH stages are unreachable in this build.
 
 ## Connected-device identity
 
@@ -342,11 +344,47 @@ exact raw Image at probe offset `0x1f0000`. It contains all 32 candidates from
 `0x000000` through `0x1f0000`; the generator independently reopened the Image
 and verified all 256 sampled qwords.
 
+## Diagnostic-only target
+
+`src/targets/gts7lwifi-T870XXS8DXH1/target.h` now contains the exact offline
+constants, but it is deliberately not a production/root profile. It has two
+independent compile-time/runtime stops:
+
+```text
+non-APP_PAYLOAD build: preprocessing error
+APP_PAYLOAD build: APP_SLIDE_DIAGNOSTIC_ONLY=1
+post-slide behavior: return before fops/configfs/UMH
+```
+
+The complete app source set passes host syntax validation with warnings
+promoted to errors except for the repository's pre-existing transposed
+`calloc` diagnostic. A non-app compile was separately verified to fail on the
+diagnostic-only `#error`.
+
+The diagnostic artifact was built with Android NDK r29 revision
+`29.0.14206865` for Android API 33:
+
+```sh
+make TARGET=gts7lwifi-T870XXS8DXH1 API=33 \
+  ANDROID_NDK_HOME=/path/to/android-ndk-r29 release
+```
+
+```text
+artifact: artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+format:   ELF64 little-endian AArch64 shared object, Android 33, stripped
+size:     104128 bytes
+SHA-256:  98001d7c8a92e31548b8c9509441691a508fdb0137e6d09d0661a76b797218b1
+```
+
+The diagnostic target adds hidden symbol visibility before section garbage
+collection. Post-link inspection retains the `slide diagnostic-only stop`
+marker but finds no root helper, `call_usermodehelper`, `misc_fops`, configfs,
+or root/fops/configfs exported-symbol markers. The fixed-size artifact is an
+exact byte-for-byte copy of the verified release output.
+
 ## Remaining gates before any device execution
 
-1. Hardware-validate the result fd-set route with a diagnostic-only build;
-   keep root/UMH disabled until the returned masks and scheduler trigger are stable.
-2. Add a compile-time diagnostic-only target gate and build it with an Android
-   AArch64 NDK; a normal/root build must remain rejected at preprocessing time.
-3. Run the diagnostic-only build first. Do not run the root/UMH path until the
-   diagnostic route is stable and the device has a recovery plan.
+1. Hardware-validate only the result fd-set route; confirm the returned masks
+   and scheduler trigger while the fops/configfs/UMH stop remains enabled.
+2. Do not create or run a root/UMH profile until the diagnostic route is stable
+   and the device has a recovery plan.
