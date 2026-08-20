@@ -2,6 +2,21 @@
   "schemaVersion": 3,
   "payloads": [
     {
+      "payloadId": "gts7lwifi-T870XXS8DXH1",
+      "displayName": "Galaxy Tab S7 | Kernel 4.19.113",
+      "models": ["SM-T870"],
+      "kernelVersions": ["4.19.113"],
+      "requiresFreshP0Session": true,
+      "exploit": {
+        "url": "artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so",
+        "size": 104128
+      },
+      "kernelsu": {
+        "url": "kernelsu/ksud-gts7lwifi-T870XXS8DXH1-kdp",
+        "size": 3557112
+      }
+    },
+    {
       "payloadId": "galaxy-s25-series-2026-06-07",
       "displayName": "Galaxy S25 series | Kernel 6.6.98",
       "models": [
@@ -176,21 +191,6 @@
       "kernelsu": {
         "url": "kernelsu/ksud-e1s-S921NKSSFDZF3-kdp",
         "size": 4758872
-      }
-    },
-    {
-      "payloadId": "gts7lwifi-T870XXS8DXH1-p0-oracle-null-timeout-fresh4-diagnostic",
-      "displayName": "Galaxy Tab S7 | Kernel 4.19.113 (P0 oracle null-timeout fresh4 diagnostic)",
-      "models": ["SM-T870"],
-      "kernelVersions": ["4.19.113"],
-      "requiresFreshP0Session": true,
-      "exploit": {
-        "url": "artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-p0-oracle-null-timeout-fresh4.so",
-        "size": 104128
-      },
-      "kernelsu": {
-        "url": "kernelsu/ksud-gts7lwifi-T870XXS8DXH1-diagnostic-stub",
-        "size": 4744
       }
     }
   ]

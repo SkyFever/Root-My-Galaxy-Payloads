@@ -8,6 +8,8 @@ between KMIs.
 
 | File | Target | KMI | Purpose |
 | --- | --- | --- | --- |
+| `android13-4.19.113_kernelsu-gts7lwifi-T870XXS8DXH1-kdp.ko` | `SM-T870`, `T870XXS8DXH1` | `4.19.113-27114284` | Exact 4.19 manual-relocation module with a zero-length `__versions` section and no KPROBES/live-text-patch imports |
+| `ksud-gts7lwifi-T870XXS8DXH1-kdp` | Same exact T870 build | `4.19.113-27114284` | Hardware-test candidate embedding the exact module and target-specific `selinux_state` relocation fallback |
 | `android15-6.6_kernelsu-s25u-kdp.ko` | `SM-S938N`, `S938NKSUACZF1` | `android15-6.6` | Standalone reference module from the previously deployed S25U build |
 | `ksud-s25u-kdp` | `SM-S938N`, `S938NKSUACZF1` | `android15-6.6` | Late-load binary embedding the 6.6 module |
 | `android15-6.6_kernelsu-A566EXXSCCZG6-kdp.ko` | `SM-A566E`, `A566EXXSCCZG6` | `android15-6.6` | Exact A56 module with target `vermagic`, audited for manual relocation; live text patching disabled for Exynos EL2 |
@@ -26,18 +28,13 @@ between KMIs.
 | `ksud-samsung-android14-6.1-kdp` | Same verified 6.1 targets | `android14-6.1` | Late-load binary embedding the 6.1 module |
 | `android12-5.10_kernelsu-samsung-kdp.ko` | `SM-A155N` `A155NKSS6BYH1` | `android12-5.10` | Standalone Samsung KDP/RKP/DEFEX module built against the exact A15 kernel |
 | `ksud-samsung-android12-5.10-kdp` | `SM-A155N` `A155NKSS6BYH1` | `android12-5.10` | Late-load binary embedding the 5.10 module |
-| `ksud-gts7lwifi-T870XXS8DXH1-diagnostic-stub` | `SM-T870`, `T870XXS8DXH1` | none | Non-root stub required only for app-routed slide diagnostics; exits with status 78 if invoked |
 
 The standalone `.ko` files are retained for auditing. Root My Galaxy downloads
 the corresponding `ksud-*` file because `ksud late-load` loads its embedded
 `<kmi>_kernelsu.ko` asset.
 
-The SM-T870 diagnostic stub is not KernelSU and contains no kernel module. The
-support feed pairs it with the diagnostic-only exploit because schema v3
-requires both downloads. The exploit returns before the root/UMH and late-load
-paths, and the stub fails closed if it is invoked unexpectedly.
-
-The generic 6.1 files and E3Q pair are build-verified but device-untested. The
+The T870 pair is build-verified and device-untested. The generic 6.1 files and
+E3Q pair are build-verified but device-untested. The
 E3Q pair is tied to the full S928U DZF2 release string and must not be replaced
 with the generic 6.1 pair. The E2S pair is tied to the S926B DZDR release,
 static-audited, and device-tested: late-load reports version code `32525`, and
@@ -97,6 +94,33 @@ contains the complete source delta from the tagged v3.2.5 tree:
 - stage `ksud` at `/data/local/tmp/.ksud-stage`, rename it onto the same
   `/data` filesystem before loading the module, then finish labels/assets after
   the module is active.
+
+The T870 4.19 build applies
+[`patches/KernelSU-v3.2.5-samsung-4.19-t870.patch`](patches/KernelSU-v3.2.5-samsung-4.19-t870.patch)
+after the common Samsung patch. The follow-up contains the 4.19 API backports,
+legacy SELinux policy handling, KPROBES-free reboot tracepoint control path,
+and exact-release userspace relocation/KMI handling. Apply them in this order:
+
+```sh
+git checkout v3.2.5
+git apply KernelSU-v3.2.5-samsung-kdp-rkp-defex.patch
+git apply KernelSU-v3.2.5-samsung-4.19-t870.patch
+```
+
+## 4.19 T870 generalization
+
+The exact T870 configuration has `CONFIG_KPROBES=n`,
+`CONFIG_KRETPROBES=n`, `CONFIG_MODVERSIONS=y`, and
+`CONFIG_MODULE_SIG_FORCE=y`. The 4.19 follow-up therefore does not import
+kprobe or `stop_machine` APIs. It registers the reboot magic handler on the
+raw syscall tracepoint and leaves syscall-table/live-text patching disabled.
+Samsung DEFEX shadow credentials are still synchronized, but the unavailable
+per-task DEFEX kprobe bypass is not installed.
+
+The stock RTIC layout omits the `selinux_state` definition from kallsyms. The
+exact T870 late loader resolves it as `_text + 0x047cf000`, guarded by the full
+release `4.19.113-27114284`. The exploit separately clears the exact stock
+`sig_enforce` data byte at `_text + 0x031ca980` before `init_module`.
 
 ## 6.1 generalization
 

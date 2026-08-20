@@ -424,12 +424,6 @@ int run_exploit(int argc, char **argv) {
                kaslr_base, kaslr_slide, slide_p0_offset);
     return 0;
   }
-#if defined(APP_SLIDE_DIAGNOSTIC_ONLY) && APP_SLIDE_DIAGNOSTIC_ONLY
-  pr_success("slide diagnostic-only stop base=%016zx slide=%016zx "
-             "p0_offset=%08zx; fops/configfs/umh disabled\n",
-             kaslr_base, kaslr_slide, slide_p0_offset);
-  return 0;
-#endif
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
   if (!slide_p0_session_fresh) {
     pr_error("full route requires P0 discovery in the current exploit process; "

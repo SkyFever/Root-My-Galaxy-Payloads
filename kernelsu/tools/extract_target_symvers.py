@@ -21,6 +21,23 @@ def read_virtual_address(elf_file, address, size):
     raise ValueError(f"virtual address 0x{address:x} is not backed by a PT_LOAD segment")
 
 
+def read_c_string(elf_file, address, max_size=4096):
+    for segment in elf_file.iter_segments():
+        if segment["p_type"] != "PT_LOAD":
+            continue
+        start = segment["p_vaddr"]
+        end = start + segment["p_filesz"]
+        if not start <= address < end:
+            continue
+        size = min(max_size, end - address)
+        data = read_virtual_address(elf_file, address, size)
+        nul = data.find(b"\0")
+        if nul < 0:
+            raise ValueError(f"unterminated string at virtual address 0x{address:x}")
+        return data[:nul].decode("ascii")
+    raise ValueError(f"virtual address 0x{address:x} is not backed by a PT_LOAD segment")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("vmlinux", type=Path)
@@ -42,35 +59,65 @@ def main():
                 symbols["__start___ksymtab"],
                 symbols["__stop___ksymtab"],
                 symbols["__start___kcrctab"],
+                symbols["__stop___kcrctab"],
                 "EXPORT_SYMBOL",
             ),
             (
                 symbols["__start___ksymtab_gpl"],
                 symbols["__stop___ksymtab_gpl"],
                 symbols["__start___kcrctab_gpl"],
+                symbols["__stop___kcrctab_gpl"],
                 "EXPORT_SYMBOL_GPL",
             ),
         )
 
+        table_ranges = []
+        for table_start, table_stop, crc_start, crc_stop, export_type in ranges:
+            table_size = table_stop - table_start
+            crc_size = crc_stop - crc_start
+            if crc_size % 4:
+                raise ValueError(f"unaligned {export_type} CRC table")
+            symbol_count = crc_size // 4
+            if symbol_count == 0 or table_size % symbol_count:
+                raise ValueError(f"cannot derive {export_type} kernel_symbol size")
+            entry_size = table_size // symbol_count
+            if entry_size not in (8, 12, 16):
+                raise ValueError(
+                    f"unsupported {export_type} kernel_symbol size: {entry_size}"
+                )
+            table_ranges.append(
+                (table_start, table_stop, crc_start, export_type, entry_size, symbol_count)
+            )
+
         entries = []
-        for name, address in symbols.items():
-            if not name.startswith("__ksymtab_"):
-                continue
-            exported_name = name[len("__ksymtab_") :]
-            for table_start, table_stop, crc_start, export_type in ranges:
-                if not table_start <= address < table_stop:
-                    continue
-                table_offset = address - table_start
-                if table_offset % 12:
-                    raise ValueError(f"unaligned kernel_symbol entry for {exported_name}")
-                crc_address = crc_start + (table_offset // 12) * 4
+        for table_start, _, crc_start, export_type, entry_size, symbol_count in table_ranges:
+            for index in range(symbol_count):
+                entry_address = table_start + index * entry_size
+                if entry_size in (8, 12):
+                    name_field_address = entry_address + 4
+                    name_offset = struct.unpack(
+                        "<i", read_virtual_address(elf_file, name_field_address, 4)
+                    )[0]
+                    name_address = name_field_address + name_offset
+                else:
+                    name_address = struct.unpack(
+                        "<Q", read_virtual_address(elf_file, entry_address + 8, 8)
+                    )[0]
+                exported_name = read_c_string(elf_file, name_address)
+                crc_address = crc_start + index * 4
                 crc = struct.unpack("<I", read_virtual_address(elf_file, crc_address, 4))[0]
                 entries.append((exported_name, crc, export_type))
-                break
 
-    expected_count = sum((table_stop - table_start) // 12 for table_start, table_stop, _, _ in ranges)
+    expected_count = sum(symbol_count for *_, symbol_count in table_ranges)
     if len(entries) != expected_count:
         raise ValueError(f"recovered {len(entries)} symbols, expected {expected_count}")
+    unique_entries = {}
+    for name, crc, export_type in entries:
+        previous = unique_entries.get(name)
+        if previous is not None and previous != (crc, export_type):
+            raise ValueError(f"conflicting duplicate export for {name}")
+        unique_entries[name] = (crc, export_type)
+    entries = [(name, *values) for name, values in unique_entries.items()]
 
     entries.sort(key=lambda entry: entry[0])
     args.output.write_text(

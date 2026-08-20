@@ -16,12 +16,6 @@ APP_RELEASE := $(OUTDIR)/cve-2026-43499-app.release.so
 APP_RELEASE_SIZE := 104128
 ROOT_HELPER := $(OUTDIR)/cve-2026-43499-root
 
-DIAGNOSTIC_TARGETS := gts7lwifi-T870XXS8DXH1
-TARGET_CFLAGS :=
-ifneq ($(filter $(TARGET),$(DIAGNOSTIC_TARGETS)),)
-TARGET_CFLAGS += -fvisibility=hidden
-endif
-
 PRELOAD_SRCS := \
   src/main.c \
   src/util.c \
@@ -43,8 +37,7 @@ APP_PRELOAD_SRCS := \
 COMMON_CFLAGS := \
   -O2 -g0 -Wall -Wextra \
   -Wno-unused-parameter -Wno-sign-compare \
-  -Isrc -DTARGET_HEADER='"$(TARGET_INCLUDE)"' \
-  $(TARGET_CFLAGS)
+  -Isrc -DTARGET_HEADER='"$(TARGET_INCLUDE)"'
 
 .DEFAULT_GOAL := all
 
@@ -74,7 +67,6 @@ $(APP_RELEASE): $(APP_PRELOAD_SRCS) $(TARGET_HEADER) src/offset.h src/common.h s
 	  -ffunction-sections -fdata-sections \
 	  -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare \
 	  -Isrc -DTARGET_HEADER='"$(TARGET_INCLUDE)"' \
-	  $(TARGET_CFLAGS) \
 	  $(APP_PRELOAD_SRCS) -shared -pthread \
 	  -Wl,--gc-sections -Wl,--icf=all -s -o $@
 	@test $$(stat -c %s $@) -le $(APP_RELEASE_SIZE)

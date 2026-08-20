@@ -51,7 +51,11 @@ def load_vmlinux_symbols(path: Path):
         symtab = elf.get_section_by_name(".symtab")
         if symtab is None:
             raise ValueError("target vmlinux has no .symtab")
-        return {symbol.name for symbol in symtab.iter_symbols() if symbol.name}
+        return {
+            symbol.name
+            for symbol in symtab.iter_symbols()
+            if symbol.name and symbol["st_shndx"] != "SHN_UNDEF"
+        }
 
 
 def main():
