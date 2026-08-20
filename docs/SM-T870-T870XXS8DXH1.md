@@ -62,11 +62,12 @@ The stock byte at `sig_enforce` is 1. The app payload changes this data byte to
 0 before the privileged helper invokes KernelSU's late loader; it does not
 patch kernel text.
 
-The currently published production exploit is fixed at 104128 bytes:
+The currently published checkpoint-instrumented production exploit is fixed
+at 104128 bytes:
 
 ```text
 artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
-SHA-256: 84f69504811e1e80d31827df825398a296ac9a990af1e7d81b06b8fb10120bfe
+SHA-256: 845927f38e26336c6b8f041cffdc12b6068065fd0ad8f54591bb299d9986b1ac
 ```
 
 ### KernelSnitch page-prepare diagnostic
@@ -90,6 +91,20 @@ therefore repeated until the outer timeout. This result validates the complete
 page-prepare path on hardware. The stop and verbose target flags are removed,
 the guarded checkpoints remain available in shared source, and the published
 artifact has returned to the in-kernel pselect/P0 production route.
+
+The 2026-08-21 12:53 production rerun again stopped immediately after the
+`KernelSnitch profile` line and rebooted with `KPON`. The next boot stored
+`SYSTEM_LAST_KMSG_7_20260821_125437_KP`. Its retained pstore tail begins after
+Samsung's truncation marker and contains the panic-time idle-CPU dumps, but
+not the initiating watchdog line or the originally stuck CPU stack. It
+therefore cannot distinguish a page-prepare lockup from a failure immediately
+after page preparation and before the first pselect-route log.
+
+The next published artifact enables only
+`APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS`. It does not enable
+`KERNELSNITCH_VERBOSE`, does not stop after page preparation, and does not
+change the KernelSnitch profile or any pselect/rt_mutex timing. Its build label
+is `gts7lwifi-T870XXS8DXH1-app-in-kernel-pselect-checkpoint`.
 
 ### Exact legacy pselect trigger window
 
