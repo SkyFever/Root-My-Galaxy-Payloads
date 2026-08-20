@@ -179,13 +179,13 @@
       }
     },
     {
-      "payloadId": "gts7lwifi-T870XXS8DXH1-diagnostic",
-      "displayName": "Galaxy Tab S7 | Kernel 4.19.113 (slide diagnostic)",
+      "payloadId": "gts7lwifi-T870XXS8DXH1-page-prepare-diagnostic",
+      "displayName": "Galaxy Tab S7 | Kernel 4.19.113 (page-prepare diagnostic)",
       "models": ["SM-T870"],
       "kernelVersions": ["4.19.113"],
       "requiresFreshP0Session": true,
       "exploit": {
-        "url": "artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so",
+        "url": "artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-page-prepare.so",
         "size": 104128
       },
       "kernelsu": {

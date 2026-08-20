@@ -1,9 +1,9 @@
 # Galaxy Tab S7 SM-T870 / T870XXS8DXH1 port record
 
 This record freezes the exact device, firmware, kernel, and offline analysis
-inputs for profile `gts7lwifi-T870XXS8DXH1`. It is deliberately not a runnable
-target yet. No payload was pushed or executed, and no partition or boot image
-was changed while collecting this evidence.
+inputs for profile `gts7lwifi-T870XXS8DXH1`. It remains a diagnostic-only
+target while hardware validation is in progress. No partition or boot image
+was modified while collecting evidence or running the app payload.
 
 ## Status
 
@@ -18,7 +18,7 @@ pselect result-set route: macro-gated prototype, static compile passed
 physical map / P0 table: offline proof complete
 target.h: diagnostic-only, static compile passed
 diagnostic artifact: NDK r29 / Android API 33 build complete
-hardware exploit validation: not started
+hardware exploit validation: first run reached pipe oracle, then kernel panic
 ```
 
 The vulnerable `remove_waiter()` implementation is present in this 4.19
@@ -28,6 +28,24 @@ has now been added to the shared code. The remaining gate is deliberately a
 diagnostic-only hardware validation of that route. The target header rejects
 non-app builds, and the app returns immediately after the slide diagnostic;
 the fops, configfs, and root/UMH stages are unreachable in this build.
+
+## First hardware result
+
+The first app run on 2026-08-20 matched the exact support profile and reached
+`p0 pipe oracle prepared base=ffffffc297858000`. The device then rebooted
+before another payload line was durably captured.
+
+Samsung's reset records identify a kernel panic followed by a non-secure
+watchdog reset. The recorded PC was `_raw_spin_trylock+0x1c` and the LR was
+`rt_mutex_adjust_prio_chain+0x2d4`. In the exact stock image that PC is
+`ldr w8, [x0]`, so the RT priority chain attempted to lock an invalid address.
+The KernelSU diagnostic stub was never invoked.
+
+The next artifact therefore enables the compile-time fresh-P0 path that the
+support JSON already required, emits KernelSnitch and reclaim checkpoints, and
+returns immediately after kernel-page preparation. It does not enter the
+pselect/RT-mutex write trigger. The supervisor is limited to one attempt so a
+failed diagnostic is not automatically repeated.
 
 ## Connected-device identity
 
@@ -347,12 +365,15 @@ and verified all 256 sampled qwords.
 ## Diagnostic-only target
 
 `src/targets/gts7lwifi-T870XXS8DXH1/target.h` now contains the exact offline
-constants, but it is deliberately not a production/root profile. It has two
-independent compile-time/runtime stops:
+constants, but it is deliberately not a production/root profile. The current
+artifact is a page-preparation diagnostic with layered stops:
 
 ```text
 non-APP_PAYLOAD build: preprocessing error
 APP_PAYLOAD build: APP_SLIDE_DIAGNOSTIC_ONLY=1
+fresh-session behavior: APP_REQUIRE_FRESH_P0_SESSION=1
+current hardware stage: stop after prepare_good_kernel_page()
+RT-mutex trigger: not entered
 post-slide behavior: return before fops/configfs/UMH
 ```
 
@@ -370,10 +391,10 @@ make TARGET=gts7lwifi-T870XXS8DXH1 API=33 \
 ```
 
 ```text
-artifact: artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+artifact: artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-page-prepare.so
 format:   ELF64 little-endian AArch64 shared object, Android 33, stripped
 size:     104128 bytes
-SHA-256:  98001d7c8a92e31548b8c9509441691a508fdb0137e6d09d0661a76b797218b1
+SHA-256:  cc096cc502d05f043c799e5cf217ff9d2c83640946ac3cb0669f6536c6acd58f
 ```
 
 The diagnostic target adds hidden symbol visibility before section garbage
@@ -382,9 +403,11 @@ marker but finds no root helper, `call_usermodehelper`, `misc_fops`, configfs,
 or root/fops/configfs exported-symbol markers. The fixed-size artifact is an
 exact byte-for-byte copy of the verified release output.
 
-## Remaining gates before any device execution
+## Remaining gates before the RT-mutex trigger is re-enabled
 
-1. Hardware-validate only the result fd-set route; confirm the returned masks
-   and scheduler trigger while the fops/configfs/UMH stop remains enabled.
-2. Do not create or run a root/UMH profile until the diagnostic route is stable
-   and the device has a recovery plan.
+1. Run the page-preparation diagnostic and inspect its last durable checkpoint,
+   leaked `mm_struct`, order-3 base, fake task, and fake lock addresses.
+2. Reject or constrain the KernelSnitch candidate range if the leaked base is
+   outside the verified RAM segments.
+3. Do not re-enable the result-fdset RT-mutex trigger, or create a root/UMH
+   profile, until the page candidate and reclaim are stable.
