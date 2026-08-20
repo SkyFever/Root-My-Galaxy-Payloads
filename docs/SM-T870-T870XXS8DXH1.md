@@ -74,6 +74,40 @@ artifact uses a target-only compile-time override that forces the supervisor
 to one attempt even when the app supplies that environment value. The
 RT-mutex trigger remains disabled.
 
+## Third hardware result
+
+The forced-single-attempt run captured in
+`RootMyGalaxy-20260820-194326-failed.log.txt` selected the new payload ID and
+logged `requested=24 effective=1`, followed by exactly one supervisor attempt.
+The apparent second copy in the file is the app embedding the same exploit log
+inside its final error text: both copies have PID 29712/29713 and identical
+addresses. It is not a second execution.
+
+The run completed page preparation in 8.344 seconds with collision
+confirmations 3, reclaim 16/16, and object index 11:
+
+```text
+pipe direct map:  ffffffc1ae090000 -> physical 0x22e090000 (RAM 2)
+page direct map:  ffffffc060ff8000 -> physical 0x0e0ff8000 (RAM 1)
+fake task:        ffffffc060ff8180 -> physical 0x0e0ff8180 (RAM 1)
+fake lock:        ffffffc060ffc380 -> physical 0x0e0ffc380 (RAM 1)
+```
+
+The device did not reboot or panic, and the run reached the deliberate
+`rt_mutex trigger not entered` stop. Object index 11, after seven earlier
+index-12 successes, shows that page preparation is stable without depending
+on one fixed object position.
+
+Exact stock disassembly further narrows the first panic. At
+`remove_waiter+0x158`, the kernel loads `next_lock` from offset `0x38` of the
+task's blocked waiter and passes it as argument `x3`. At
+`rt_mutex_adjust_prio_chain+0x2cc`, that value is moved to `x0`; the call at
+`+0x2d4` enters `_raw_spin_trylock`, where the fault occurred. The next
+diagnostic therefore validates legacy waiter word 7 (offset `0x38`) as the
+fake lock, logs all ten waiter words and their pointer ranges, exercises the
+futex/pselect result route, and stops before the `sched_setattr` syscall that
+would enter this priority-chain path.
+
 ## Connected-device identity
 
 ```text
@@ -393,14 +427,15 @@ and verified all 256 sampled qwords.
 
 `src/targets/gts7lwifi-T870XXS8DXH1/target.h` now contains the exact offline
 constants, but it is deliberately not a production/root profile. The current
-artifact is a page-preparation diagnostic with layered stops:
+artifact is a pre-trigger geometry diagnostic with layered stops:
 
 ```text
 non-APP_PAYLOAD build: preprocessing error
 APP_PAYLOAD build: APP_SLIDE_DIAGNOSTIC_ONLY=1
 fresh-session behavior: APP_REQUIRE_FRESH_P0_SESSION=1
-current hardware stage: stop after prepare_good_kernel_page()
-RT-mutex trigger: not entered
+current hardware stage: futex/pselect result fd-set validation
+geometry: ten legacy waiter words plus pointer ranges logged
+hard stop: before sched_setattr(); RT priority-chain trigger not entered
 post-slide behavior: return before fops/configfs/UMH
 ```
 
@@ -418,10 +453,10 @@ make TARGET=gts7lwifi-T870XXS8DXH1 API=33 \
 ```
 
 ```text
-artifact: artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-page-prepare-single.so
+artifact: artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-pretrigger-geometry.so
 format:   ELF64 little-endian AArch64 shared object, Android 33, stripped
 size:     104128 bytes
-SHA-256:  38d527317c5bfb62bc3089a4caba3c4724122bbec1145629bbb022671396d524
+SHA-256:  0c8faeeb2b2797460c5db342afe20af2a69d180f5450d6ac1c7dcaa3ec172c87
 ```
 
 The diagnostic target adds hidden symbol visibility before section garbage
@@ -432,9 +467,11 @@ exact byte-for-byte copy of the verified release output.
 
 ## Remaining gates before the RT-mutex trigger is re-enabled
 
-1. Reconcile the exact 4.19 legacy `rt_mutex_waiter`, fake task PI fields, and
-   result-fdset stack placement with the `_raw_spin_trylock+0x1c` panic.
-2. Add a one-shot pre-trigger geometry check that logs every pointer consumed
-   by `rt_mutex_adjust_prio_chain` and stops before `sched_setattr`.
-3. Do not re-enable the result-fdset RT-mutex trigger, or create a root/UMH
-   profile, until that priority-chain geometry has been validated.
+1. Run the pre-trigger diagnostic and require all six values in
+   `p0 pretrigger range` to equal one.
+2. Require `p0 pretrigger diagnostic stop` and confirm that it says
+   `sched_setattr not entered` without a reboot.
+3. Reconcile the observed result-fdset route with the exact 4.19 stack layout;
+   do not infer kernel-stack alignment from the user-space word check alone.
+4. Do not enable `sched_setattr`, create a root/UMH profile, or replace the
+   KernelSU stub until the priority-chain geometry is validated.
