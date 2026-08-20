@@ -62,11 +62,11 @@ The stock byte at `sig_enforce` is 1. The app payload changes this data byte to
 0 before the privileged helper invokes KernelSU's late loader; it does not
 patch kernel text.
 
-The currently published diagnostic exploit is fixed at 104128 bytes:
+The currently published production exploit is fixed at 104128 bytes:
 
 ```text
 artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
-SHA-256: d1485355fc5e431e0db8e353b67fef9eb1ae1d7538082f5166e240815f35b374
+SHA-256: 84f69504811e1e80d31827df825398a296ac9a990af1e7d81b06b8fb10120bfe
 ```
 
 ### KernelSnitch page-prepare diagnostic
@@ -78,13 +78,18 @@ The 2026-08-21 12:03 hardware run stopped immediately after the
 than an app timeout. That run produced no pselect, P0 pipe-gate, KASLR, or
 KernelSU line, so it does not test the in-kernel pselect route.
 
-The published artifact therefore enables the existing page-prepare diagnostic
-checkpoints, KernelSnitch verbose output, and one supervisor attempt. It stops
-after `prepare_good_kernel_page(PAGE_PAYLOAD_SLIDE)` returns and never enters
-the rt-mutex, pselect, physical-write, root-helper, or KernelSU stages. The next
-hardware log must identify the last completed checkpoint among topology
-creation, collision search, mm-struct brute-force, payload construction, and
-skb reclaim before the production trigger is restored.
+The follow-up page-prepare diagnostic completed seven distinct hardware
+attempts through collision search, mm-struct brute-force, payload construction,
+and skb reclaim. Every completed attempt leaked object index 8 and sent all
+16/16 reclaim skbs before the diagnostic stop. The eighth attempt was cut off
+by the app supervisor's 120-second overall timeout; the device did not reboot.
+
+`DEFAULT_EXPLOIT_ATTEMPTS=1` controls the payload-side default but does not
+override the app's external `attempts=24` supervisor setting. The diagnostic
+therefore repeated until the outer timeout. This result validates the complete
+page-prepare path on hardware. The stop and verbose target flags are removed,
+the guarded checkpoints remain available in shared source, and the published
+artifact has returned to the in-kernel pselect/P0 production route.
 
 ### Exact legacy pselect trigger window
 
