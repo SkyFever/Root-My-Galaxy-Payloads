@@ -6,7 +6,7 @@
 #endif
 
 #define BUILD_VARIANT_LABEL \
-  "gts7lwifi-T870XXS8DXH1-app-p0-oracle-null-timeout-diagnostic"
+  "gts7lwifi-T870XXS8DXH1-app-p0-oracle-null-timeout-fresh4-diagnostic"
 #define APP_PHYS_P0_ORACLE 1
 #define APP_SLIDE_DIAGNOSTIC_ONLY 1
 #define APP_REQUIRE_FRESH_P0_SESSION 1
@@ -14,6 +14,7 @@
 #define APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC 1
 #define APP_SLIDE_P0_ORACLE_DIAGNOSTIC 1
 #define SLIDE_PSELECT_NULL_TIMEOUT 1
+#define APP_SLIDE_FRESH_PAGE_ATTEMPTS 4
 #define DEFAULT_EXPLOIT_ATTEMPTS 1
 #define APP_FORCE_SINGLE_ATTEMPT 1
 
