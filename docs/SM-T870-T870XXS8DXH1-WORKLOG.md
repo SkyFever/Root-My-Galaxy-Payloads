@@ -272,3 +272,100 @@ decrease-return
 The build label is `gts7lwifi-T870XXS8DXH1-app-ks-collision-checkpoint`.
 The 104128-byte artifact SHA-256 is
 `150b3795dfa4da86485d033b9ac02ffe509deb9032e8a4917e0190328fdedb2d`.
+
+### 2026-08-21 14:34 incomplete history recovery and correction
+
+The app did preserve the latest run, but not as a finalized exported failure
+log. Its atomic history writer left
+`files/install-history/dbb7cc50-863e-4a4f-80ff-34be75c1391d.json.new` with
+`result=Running` when the device rebooted. Treat `.json.new` as authoritative
+crash evidence instead of concluding that no log exists.
+
+This recovered log invalidates the preceding KernelSnitch failure hypothesis.
+The run completed all of these existing stages:
+
+- P0 pipe collision search, bruteforce, KernelSnitch cleanup, pipe allocation,
+  and context cleanup;
+- P0 pipe oracle preparation;
+- the second kernel-page collision search and bruteforce;
+- all 16 skb reclaim sends;
+- KernelSnitch cleanup;
+- prepare-child cleanup through 1024/1024;
+- kernel-page completion and page-search selection.
+
+The exact final lines were:
+
+```text
+p0 fresh page attempt=1/1 base=ffffffc0592f0000
+slide child context route=pselect pid=22033 uid=10331 euid=10331
+slide wait_requeue_pi ret=-1 errno=110
+```
+
+No `slide cmp_requeue_pi` result followed. The device rebooted around 14:34
+and created `SYSTEM_LAST_KMSG_13_20260821_143501_KP`; the retained 12610-byte
+entry contains only bootloader output and no initiating futex/rt_mutex stack.
+
+The waiter's `ETIMEDOUT` is accepted by the current code. After that, the
+waiter spins until the coordinating thread's existing
+`FUTEX_CMP_REQUEUE_PI` call returns `EDEADLK`. The missing return log limits
+the active kernel failure interval to that PI-requeue/deadlock operation.
+
+The referenced upstream uses the same wait-requeue/PI-chain exploit route, but
+does not contain the repository's later EDEADLK validation and polling around
+the coordinating `FUTEX_CMP_REQUEUE_PI` call. Before any new payload build,
+audit that repository change against Samsung 4.19's
+`futex_requeue()`, `futex_lock_pi_atomic()`, proxy-lock, and rt_mutex
+deadlock handling. Do not make further KernelSnitch, reclaim, or cleanup
+changes based on this run.
+
+### 2026-08-21 PI-requeue ordering audit and T870 correction
+
+The app-private history was searched again using the unquoted tokens
+`wait_requeue_pi` and `cmp_requeue_pi`. Across all retained text histories,
+the only PI-route return record is:
+
+```text
+slide wait_requeue_pi ret=-1 errno=110
+```
+
+There is no retained textual `slide cmp_requeue_pi` return. This confirms that
+the latest missing line is not just an export truncation and that no older
+retained run proves the repository's EDEADLK gate completes on this device.
+
+The exact Samsung 4.19 source in
+`common/SM-T870_EUR_13_Opensource/kernel/futex.c` was compared with both the
+current app payload and the referenced CyberMeowfia exploit. In
+`futex_requeue()`, PI requeue enters `futex_proxy_trylock_atomic()` and then
+`rt_mutex_start_proxy_lock()` before the syscall can return. The waiter-side
+`futex_wait_requeue_pi()` performs proxy-lock cleanup and owner fixup before
+returning. Therefore the current app-only ordering can make userspace wait for
+the coordinator's syscall result while that kernel path still depends on PI
+chain progress.
+
+The repository's app payload had added two conditions that are absent from
+the referenced exploit: the waiter kept `slide_f_pi_chain` locked until the
+coordinator observed EDEADLK, and the coordinator polled until that exact
+result. The referenced exploit instead unlocks the chain immediately after
+`FUTEX_WAIT_REQUEUE_PI` returns and treats `FUTEX_CMP_REQUEUE_PI` as the
+trigger rather than a required EDEADLK oracle. The repository's older
+`src/main.c` route likewise does not gate progress on the requeue return.
+
+Add `SLIDE_UPSTREAM_PI_REQUEUE_ORDER` only to the T870 target. With this flag,
+the existing 50 ms wait result is still logged and must still be ETIMEDOUT,
+but the waiter then unlocks the chain immediately. The coordinator performs
+one upstream-style `FUTEX_CMP_REQUEUE_PI`, logs the result for diagnosis, and
+does not require EDEADLK. All page preparation, KernelSnitch, reclaim, waiter
+layout, pselect word shift, and physical-write code remains unchanged. Other
+targets retain the existing guarded behavior.
+
+The release build completed with NDK r29 and retained the required fixed size.
+The published artifact candidate is:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-pi-order
+size:   104128
+sha256: 83516e34799fe3c6fac4e35b2084bc7f1461056fb547402975e70384762556ef
+```
+
+`support/targets-v3.json` parses successfully, still points to the repository-
+relative artifact path, and contains no BuSung-dev absolute raw URL.
