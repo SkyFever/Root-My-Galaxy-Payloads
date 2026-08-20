@@ -25,6 +25,9 @@
 #ifndef SLIDE_UPSTREAM_PI_REQUEUE_ORDER
 #define SLIDE_UPSTREAM_PI_REQUEUE_ORDER 0
 #endif
+#ifndef SLIDE_WAIT_OWNER_BEFORE_PSELECT
+#define SLIDE_WAIT_OWNER_BEFORE_PSELECT 0
+#endif
 
 #if defined(SLIDE_P0_OFFSET_CANDIDATES) && \
     (!defined(APP_PHYS_P0_ORACLE) || !APP_PHYS_P0_ORACLE)
@@ -761,10 +764,17 @@ void *slide_waiter_thread(void *arg __attribute__((unused))) {
     atomic_store(&slide_route_done, 1);
     return NULL;
   }
-#if !SLIDE_UPSTREAM_PI_REQUEUE_ORDER
+#if SLIDE_WAIT_OWNER_BEFORE_PSELECT
+  pr_info("slide chain unlock complete\n");
+#endif
+#if !SLIDE_UPSTREAM_PI_REQUEUE_ORDER || SLIDE_WAIT_OWNER_BEFORE_PSELECT
   while (!atomic_load(&slide_owner_acquired)) {
     __asm__ volatile("yield" ::: "memory");
   }
+#endif
+#if SLIDE_WAIT_OWNER_BEFORE_PSELECT
+  pr_info("slide owner chain acquired\n");
+  pr_info("slide pselect enter\n");
 #endif
 
   slide_pselect_stack_copy();

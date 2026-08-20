@@ -369,3 +369,42 @@ sha256: 83516e34799fe3c6fac4e35b2084bc7f1461056fb547402975e70384762556ef
 
 `support/targets-v3.json` parses successfully, still points to the repository-
 relative artifact path, and contains no BuSung-dev absolute raw URL.
+
+### 2026-08-21 15:05 first PI-order hardware result
+
+The device downloaded and executed the exact published artifact. Its private
+copy retained size 104128 and SHA-256
+`83516e34799fe3c6fac4e35b2084bc7f1461056fb547402975e70384762556ef`.
+The incomplete history
+`4a2f5274-f6d5-49ef-9796-d26db3dd7d20.json.new` identifies the new build label
+and ends with:
+
+```text
+slide cmp_requeue_pi ret=-1 errno=35 polls=1
+slide wait_requeue_pi ret=-1 errno=110
+```
+
+This is the first retained T870 run in which the coordinating PI-requeue call
+returned. It proves the prior missing-return interval was removed and also
+proves that Samsung 4.19 does return EDEADLK for this constructed chain. The
+device then rebooted and created
+`SYSTEM_LAST_KMSG_14_20260821_150633_KP`. The retained kernel text identifies
+`cve43499-run` as the initiating process but does not preserve a clean causal
+futex/rt_mutex stack.
+
+The new active interval begins after the wait return and before the existing
+pselect-return log. The T870 upstream-order branch currently skips the
+repository's `slide_owner_acquired` synchronization. Earlier T870 pretrigger
+diagnostics that reached and returned from pselect used that synchronization.
+Keep the immediate chain unlock and single upstream-style requeue call, but
+restore the owner-acquired wait only for T870 before entering pselect. Add
+checkpoints after chain unlock, after owner acquisition, and before pselect;
+do not change page preparation, reclaim, layout, or pselect payload data.
+
+The owner-sync release candidate built successfully with NDK r29:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-pi-owner-sync
+size:   104128
+sha256: 640e573857d4145aaa672e187609e09c9b07291a325e832e76426e75cdd2c914
+```
