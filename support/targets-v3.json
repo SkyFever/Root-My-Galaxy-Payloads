@@ -179,13 +179,13 @@
       }
     },
     {
-      "payloadId": "gts7lwifi-T870XXS8DXH1-pretrigger-route-diagnostic",
-      "displayName": "Galaxy Tab S7 | Kernel 4.19.113 (pre-trigger route diagnostic)",
+      "payloadId": "gts7lwifi-T870XXS8DXH1-p0-oracle-null-timeout-diagnostic",
+      "displayName": "Galaxy Tab S7 | Kernel 4.19.113 (P0 oracle null-timeout diagnostic)",
       "models": ["SM-T870"],
       "kernelVersions": ["4.19.113"],
       "requiresFreshP0Session": true,
       "exploit": {
-        "url": "artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-pretrigger-route.so",
+        "url": "artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app-p0-oracle-null-timeout.so",
         "size": 104128
       },
       "kernelsu": {
