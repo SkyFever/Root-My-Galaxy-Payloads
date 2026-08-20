@@ -24,12 +24,34 @@
 #if defined(APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC) && \
     APP_SLIDE_PRETRIGGER_GEOMETRY_DIAGNOSTIC && \
     (!defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) || \
-     !APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED)
-#error "pretrigger geometry diagnostic requires stop before sched_setattr"
+     !APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) && \
+    (!defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) || \
+     !APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) && \
+    (!defined(APP_SLIDE_P0_ORACLE_DIAGNOSTIC) || \
+     !APP_SLIDE_P0_ORACLE_DIAGNOSTIC)
+#error "pretrigger geometry diagnostic requires a diagnostic stop gate"
+#endif
+#if defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) && \
+    APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED && \
+    defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) && \
+    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED
+#error "select exactly one sched_setattr diagnostic stop gate"
 #endif
 #if defined(APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED) && \
     APP_SLIDE_DIAGNOSTIC_STOP_BEFORE_SCHED && !SLIDE_PSELECT_RESULT_ROUTE
 #error "stop-before-sched diagnostic requires the pselect result route"
+#endif
+#if defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) && \
+    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED && !SLIDE_PSELECT_RESULT_ROUTE
+#error "stop-after-sched diagnostic requires the pselect result route"
+#endif
+#if defined(APP_SLIDE_P0_ORACLE_DIAGNOSTIC) && \
+    APP_SLIDE_P0_ORACLE_DIAGNOSTIC && \
+    ((!defined(APP_SLIDE_DIAGNOSTIC_ONLY) || \
+      !APP_SLIDE_DIAGNOSTIC_ONLY) || \
+     !SLIDE_PSELECT_RESULT_ROUTE || \
+     (!defined(SLIDE_PSELECT_NULL_TIMEOUT) || !SLIDE_PSELECT_NULL_TIMEOUT))
+#error "P0 oracle diagnostic requires result route, null timeout, and diagnostic-only stop"
 #endif
 #define SLIDE_WAIT_NSEC 50000000L
 #define SLIDE_REQUEUE_MAX_POLLS 1000
@@ -474,6 +496,9 @@ void slide_pselect_stack_copy(void) {
 #endif
   };
   struct timespec *timeoutp = &timeout;
+#if defined(SLIDE_PSELECT_NULL_TIMEOUT) && SLIDE_PSELECT_NULL_TIMEOUT
+  timeoutp = NULL;
+#endif
 
   size_t pselect_started = gettime_ns();
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
@@ -557,8 +582,14 @@ void slide_pselect_stack_copy(void) {
           atomic_load(&slide_consume_last_sched_ret),
           atomic_load(&slide_consume_last_sched_errno));
 #endif
+#if defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) && \
+    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED
+  pr_warning("p0 post-sched diagnostic stop; physical write window suppressed\n");
+  atomic_store(&slide_pselect_write_window, 0);
+#else
   atomic_store(&slide_pselect_write_window,
                ret > 0 && atomic_load(&slide_consume_sched_ok) > 0);
+#endif
 
   close(high_read);
   if (block_fd != pipefd[0]) {
@@ -781,6 +812,12 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
       int sched_ok = atomic_load(&slide_consume_sched_ok) + 1;
       atomic_store(&slide_consume_sched_ok, sched_ok);
     }
+#if defined(APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED) && \
+    APP_SLIDE_DIAGNOSTIC_STOP_AFTER_SCHED
+    pr_warning("p0 post-sched diagnostic syscall tid=%d seq=%d "
+               "ret=%ld errno=%d; no additional trigger armed\n",
+               tid, seq, ret, saved_errno);
+#endif
     atomic_store(&slide_consume_stop, 1);
     while (atomic_load(&slide_consume_go)) {
       __asm__ volatile("yield" ::: "memory");
