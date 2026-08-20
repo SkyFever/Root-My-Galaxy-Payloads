@@ -67,7 +67,7 @@ at 104128 bytes:
 
 ```text
 artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
-SHA-256: 7d2a3c451be26de3ea0f83e11c3ed9b7012d604e3b56e814c2acf3e3ea187427
+SHA-256: 150b3795dfa4da86485d033b9ac02ffe509deb9032e8a4917e0190328fdedb2d
 ```
 
 ### KernelSnitch page-prepare diagnostic
@@ -104,10 +104,11 @@ The next published artifact enables only
 `APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS`. It does not enable
 `KERNELSNITCH_VERBOSE`, does not stop after page preparation, and does not
 change the KernelSnitch profile or any pselect/rt_mutex timing. Its build label
-is `gts7lwifi-T870XXS8DXH1-app-p0-pipe-checkpoint`. The same flag now exposes
-the existing P0 pipe-page bootstrap boundaries as well as the later
-`prepare_kernel_page()` cleanup boundaries; neither exploit path is otherwise
-changed.
+is `gts7lwifi-T870XXS8DXH1-app-ks-collision-checkpoint`. The same flag exposes
+the existing P0 pipe-page and `prepare_kernel_page()` boundaries, plus
+baseline, waiter-pileup, collision-scan, and waiter-decrease phases inside the
+existing KernelSnitch collision routine. No timed measurement or exploit
+behavior is changed.
 
 ### Exact legacy pselect trigger window
 

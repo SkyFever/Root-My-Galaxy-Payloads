@@ -404,18 +404,37 @@ void kernelsnitch_find_collisions(struct kernelsnitch_shared_state *ks)
     ASSERT_pr((ks->collisions >= 2), "need at least one collision\n");
     wanted = ks->collisions - 1;
 
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+    pr_info("KernelSnitch collision diagnostic stage=baseline-enter repeat=%zu average=%zu\n",
+            ks->repeat_measurement, ks->average);
+#endif
     size_t approx_time = MIN(
         __measure(ks, (size_t)&ks->futexes[0]),
         __measure(ks, (size_t)&ks->futexes[KS_PAGE_SIZE+8]));
 
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+    pr_info("KernelSnitch collision diagnostic stage=baseline-return approx=%zu\n",
+            approx_time);
+#endif
     // piled-up hash bucket ID 128
     // here, I append 4096 futexes to this hash bucket creating a distinction between most other empty or lightly populated ones
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+    pr_info("KernelSnitch collision diagnostic stage=pileup-enter waiters=%zu bucket=%d\n",
+            ks->appended_futexes, ID);
+#endif
     __increase(ks, ID, ks->appended_futexes);
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+    pr_info("KernelSnitch collision diagnostic stage=pileup-return\n");
+#endif
     if (ks->verbose) pr_info("start finding collisisons\n");
 
     // find futex user space address which collide with the piled-up hash bucket ID 128
     ks->futex_addrs[0] = (size_t)&ks->inc_futex[ID];
     if (ks->verbose) pr_info("target    %016zx\n", ks->futex_addrs[0]);
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+    pr_info("KernelSnitch collision diagnostic stage=scan-enter total=%zu wanted=%zu\n",
+            ks->total_futexes, wanted);
+#endif
     for (size_t i = 2; i < ks->total_futexes && count < wanted; ++i) {
         id = (i * KS_PAGE_SIZE) | (i * 8 % KS_PAGE_SIZE);
         if (id >= FUTEX_SZ)
@@ -449,7 +468,18 @@ void kernelsnitch_find_collisions(struct kernelsnitch_shared_state *ks)
         pr_warning("only found %zd collisions -> cannot continue\n", count);
         ks->state = KERNELSNITCH_COLLISIONS_NOT_FOUND;
     }
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+    pr_info("KernelSnitch collision diagnostic stage=scan-return found=%zu wanted=%zu\n",
+            count, wanted);
+#endif
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+    pr_info("KernelSnitch collision diagnostic stage=decrease-enter waiters=%zu\n",
+            ks->increase_count);
+#endif
     __decrease(ks);
+#if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
+    pr_info("KernelSnitch collision diagnostic stage=decrease-return\n");
+#endif
 }
 size_t kernelsnitch_found_collisions(struct kernelsnitch_shared_state *ks)
 {

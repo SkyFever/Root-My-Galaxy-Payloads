@@ -42,8 +42,8 @@ defconfig: arch/arm64/configs/vendor/gts7lwifi_eur_open_defconfig
 ## Current published checkpoint build
 
 ```text
-label: gts7lwifi-T870XXS8DXH1-app-p0-pipe-checkpoint
-artifact SHA-256: 7d2a3c451be26de3ea0f83e11c3ed9b7012d604e3b56e814c2acf3e3ea187427
+label: gts7lwifi-T870XXS8DXH1-app-ks-collision-checkpoint
+artifact SHA-256: 150b3795dfa4da86485d033b9ac02ffe509deb9032e8a4917e0190328fdedb2d
 ```
 
 Only `APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS` is enabled. KernelSnitch verbose
@@ -214,3 +214,61 @@ No KernelSnitch count, mm spray/reclaim count, scheduler yield, pipe count,
 cleanup order, target address, or pselect timing was changed. The support feed
 still selects the same payload ID and repository-relative artifact URL; its
 size remains 104128.
+
+### 2026-08-21 14:15 P0 pipe checkpoint run
+
+The device loaded
+`gts7lwifi-T870XXS8DXH1-app-p0-pipe-checkpoint` and reached:
+
+```text
+p0 pipe page diagnostic stage=begin objects_per_slab=32
+p0 pipe page diagnostic stage=prep-spray-ready prep=1024 spray=192
+KernelSnitch profile mode=1 fast=0 appended=2048 repeat=64 average=8
+p0 pipe page diagnostic stage=kernelsnitch-ready
+p0 pipe page diagnostic stage=topology-ready pre=31 post=32 leak_pid=17088
+```
+
+It did not print `collision-search-return`. The subsequent boot ID was
+`e8893555-92a7-4e22-bac3-ecf5cddea6ab`, and DropBox created
+`SYSTEM_LAST_KMSG_12_20260821_141508_KP`. The retained 12564-byte entry again
+contains no initiating kernel stack.
+
+The parent is blocked in `waitpid(leak_child)` during this interval while the
+child runs the repository's existing `kernelsnitch_find_collisions()`.
+Therefore the active failure interval is now limited to that function's
+baseline futex measurement, waiter pileup, collision scan, or waiter teardown.
+
+The device reports eight online and eight possible CPUs. Both the exact
+Samsung 4.19 `futex_init()` and KernelSnitch's userspace hash model therefore
+select 2048 buckets. The exact 4.19 `futex_wake()` takes the bucket spinlock
+and traverses its waiter chain when `hb_waiters_pending()` is true.
+KernelSnitch deliberately queues 2048 waiters into one bucket and measures
+`FUTEX_WAKE_PRIVATE` traversal with 64 samples. This explains which stock
+kernel path is under load, but does not yet prove that a different waiter or
+sample count is required: the earlier page-prepare stop diagnostic completed
+the same profile seven times.
+
+Decision: keep all collision and measurement parameters unchanged. Add phase
+checkpoints around the existing baseline, pileup, scan, and decrease calls,
+without logging inside any timed measurement. The next surviving last line
+will identify the exact existing phase to audit before considering a
+4.19-specific behavioral change.
+
+### Published KernelSnitch collision phase build
+
+The new checkpoints are outside the timed `__measure()` loop:
+
+```text
+baseline-enter
+baseline-return
+pileup-enter
+pileup-return
+scan-enter
+scan-return
+decrease-enter
+decrease-return
+```
+
+The build label is `gts7lwifi-T870XXS8DXH1-app-ks-collision-checkpoint`.
+The 104128-byte artifact SHA-256 is
+`150b3795dfa4da86485d033b9ac02ffe509deb9032e8a4917e0190328fdedb2d`.

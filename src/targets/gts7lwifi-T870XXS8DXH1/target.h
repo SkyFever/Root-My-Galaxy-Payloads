@@ -1,7 +1,7 @@
 #ifndef OFFSET_H
 #define OFFSET_H
 #define BUILD_VARIANT_LABEL \
-  "gts7lwifi-T870XXS8DXH1-app-p0-pipe-checkpoint"
+  "gts7lwifi-T870XXS8DXH1-app-ks-collision-checkpoint"
 #define APP_PHYS_P0_ORACLE 1
 #define APP_REQUIRE_FRESH_P0_SESSION 1
 #define APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS 1
