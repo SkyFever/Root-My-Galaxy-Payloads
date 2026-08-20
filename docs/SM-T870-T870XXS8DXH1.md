@@ -67,7 +67,7 @@ at 104128 bytes:
 
 ```text
 artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
-SHA-256: 845927f38e26336c6b8f041cffdc12b6068065fd0ad8f54591bb299d9986b1ac
+SHA-256: 77a93086fc93ffacceb0dff4495ab300f1510d7fc017b5dda526c3f96f3d1e3f
 ```
 
 ### KernelSnitch page-prepare diagnostic
@@ -104,7 +104,7 @@ The next published artifact enables only
 `APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS`. It does not enable
 `KERNELSNITCH_VERBOSE`, does not stop after page preparation, and does not
 change the KernelSnitch profile or any pselect/rt_mutex timing. Its build label
-is `gts7lwifi-T870XXS8DXH1-app-in-kernel-pselect-checkpoint`.
+is `gts7lwifi-T870XXS8DXH1-app-in-kernel-cleanup-checkpoint`.
 
 ### Exact legacy pselect trigger window
 

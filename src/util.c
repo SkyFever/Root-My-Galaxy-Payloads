@@ -1452,13 +1452,19 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   pr_info("sk_buff reclaim sends=%d/%d mode=%d\n",
           reclaim_sent, reclaim_sends, payload_mode);
 #endif
-#if defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && APP_PHYS_VIRTUAL_BASE_ORACLE
+#if (defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && \
+     APP_PHYS_VIRTUAL_BASE_ORACLE) || \
+    (defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+     APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS)
   pr_info("kernel page cleanup stage=kernelsnitch begin mode=%d base=%016zx\n",
           payload_mode, base);
 #endif
   kernelsnitch_cleanup(ks);
   ks = NULL;
-#if defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && APP_PHYS_VIRTUAL_BASE_ORACLE
+#if (defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && \
+     APP_PHYS_VIRTUAL_BASE_ORACLE) || \
+    (defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+     APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS)
   pr_info("kernel page cleanup stage=kernelsnitch done mode=%d\n",
           payload_mode);
 
@@ -1474,7 +1480,10 @@ uintptr_t prepare_kernel_page(int payload_mode) {
       kill_child(prepare_ctx.childs[i]);
       prepare_ctx.childs[i] = -1;
     }
-#if defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && APP_PHYS_VIRTUAL_BASE_ORACLE
+#if (defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && \
+     APP_PHYS_VIRTUAL_BASE_ORACLE) || \
+    (defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+     APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS)
     if ((i + 1) % (8 * mm_objs_per_slab) == 0 ||
         i + 1 == prepare_ctx.mm_cnt) {
       pr_info("kernel page cleanup stage=prepare-children progress=%zu/%zu\n",
@@ -1482,7 +1491,10 @@ uintptr_t prepare_kernel_page(int payload_mode) {
     }
 #endif
   }
-#if defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && APP_PHYS_VIRTUAL_BASE_ORACLE
+#if (defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && \
+     APP_PHYS_VIRTUAL_BASE_ORACLE) || \
+    (defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
+     APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS)
   pr_info("kernel page cleanup stage=prepare-children done base=%016zx\n",
           base);
 #endif
