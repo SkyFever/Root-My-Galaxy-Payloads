@@ -66,8 +66,46 @@ The release exploit is fixed at 104128 bytes:
 
 ```text
 artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
-SHA-256: 11863cfe9d72c623a5d519db7764e7537c7e0941cfcede172d2622a0f80a9e5c
+SHA-256: 9fe9fc903005ec586b6a82af76be52178a40ebd5e87cc713e324d8df38d92408
 ```
+
+### Exact legacy pselect trigger window
+
+The first production hardware run reached the legacy pselect route on every
+recorded attempt, and `sched_setattr` returned zero, but the P0 pipe oracle
+reported `hits=0 changed=0`. The previous result-route implementation started
+`sched_setattr` only after `pselect6` had returned to userspace. Matching the
+copied userspace fd-sets proves their contents, but it does not prove that the
+freed kernel-stack waiter survived the arm64 syscall-return path.
+
+The exact stock ELF fixes both the overlap and the required execution window:
+
+```text
+__arm64_sys_futex frame:       0x070
+do_futex frame:                0x1e0
+rt_mutex_waiter in do_futex:   sp + 0x0c0
+stale waiter from syscall SP:  -0x190
+
+__arm64_sys_pselect6 frame:    0x0a0
+core_sys_select frame:         0x1c0
+result fd-set base:            syscall SP - 0x198
+waiter word zero:              result qword 1
+```
+
+This independently confirms `SLIDE_PSELECT_WORD_SHIFT=1`. The production
+payload now follows the device-tested in-kernel route: it checks the waiter
+thread's same-process `/proc` syscall and wchan entries until the thread is
+blocked in `pselect6`/`do_select`, rechecks the state immediately before
+`sched_setattr`, and accepts the successful scheduler trigger while pselect is
+still inside the kernel. The pselect timeout is 500 ms and the trigger-age
+guard is 150 ms. The post-return result route and its null timeout are not used.
+
+The same exact defconfig was compiled with debug information to audit the
+remaining legacy geometry. It confirms the checked-in `rt_mutex_waiter`,
+`rt_mutex`, `task_struct`, `struct page`, `pipe_buffer`, PAGE_OFFSET and
+VMEMMAP values. `sizeof(struct skb_shared_info) == 0x150`; aligned to the
+64-byte cache line this is `0x180`, so `SKB_MAX_HEAD(0) == 0xe80` and the
+checked-in `SKB_DATA_DELTA=-0xe80` is also retained.
 
 ## 4. Exact KernelSU 4.19 build
 
