@@ -26,10 +26,16 @@ between KMIs.
 | `ksud-samsung-android14-6.1-kdp` | Same verified 6.1 targets | `android14-6.1` | Late-load binary embedding the 6.1 module |
 | `android12-5.10_kernelsu-samsung-kdp.ko` | `SM-A155N` `A155NKSS6BYH1` | `android12-5.10` | Standalone Samsung KDP/RKP/DEFEX module built against the exact A15 kernel |
 | `ksud-samsung-android12-5.10-kdp` | `SM-A155N` `A155NKSS6BYH1` | `android12-5.10` | Late-load binary embedding the 5.10 module |
+| `ksud-gts7lwifi-T870XXS8DXH1-diagnostic-stub` | `SM-T870`, `T870XXS8DXH1` | none | Non-root stub required only for app-routed slide diagnostics; exits with status 78 if invoked |
 
 The standalone `.ko` files are retained for auditing. Root My Galaxy downloads
 the corresponding `ksud-*` file because `ksud late-load` loads its embedded
 `<kmi>_kernelsu.ko` asset.
+
+The SM-T870 diagnostic stub is not KernelSU and contains no kernel module. The
+support feed pairs it with the diagnostic-only exploit because schema v3
+requires both downloads. The exploit returns before the root/UMH and late-load
+paths, and the stub fails closed if it is invoked unexpectedly.
 
 The generic 6.1 files and E3Q pair are build-verified but device-untested. The
 E3Q pair is tied to the full S928U DZF2 release string and must not be replaced

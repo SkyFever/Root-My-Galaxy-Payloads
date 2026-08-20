@@ -38,6 +38,12 @@ SHA-256: 98001d7c8a92e31548b8c9509441691a508fdb0137e6d09d0661a76b797218b1
 Post-link inspection found only the slide diagnostic stop marker and no
 root/UMH, misc_fops, configfs, or exported root/fops symbol markers.
 
+`support/targets-v3.json` exposes this build to `SM-T870` clients as an
+explicit slide-diagnostic profile. Its required `kernelsu` download is a
+non-root Android stub that exits with status 78; it is not a KernelSU build.
+This pairing exists only so the app can launch the diagnostic payload through
+the normal schema-v3 selection path.
+
 Do not copy another target's header or remove the diagnostic stop for the first
 hardware run.
 
