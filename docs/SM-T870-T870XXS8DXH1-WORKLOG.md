@@ -1596,3 +1596,72 @@ label:  gts7lwifi-T870XXS8DXH1-app-4.19-upstream-bootid
 size:   104128
 sha256: abc8d244a63b54bee719fd187bb89f81dd8dec44083d8aae6e223fee2564f541
 ```
+
+### 2026-08-22 04:50 — kernel panic exposed a remaining non-upstream slide payload
+
+The installed artifact SHA-256 was
+`abc8d244a63b54bee719fd187bb89f81dd8dec44083d8aae6e223fee2564f541`.
+The authoritative app history is
+`d763bda3-ef96-4905-9599-a7c6302f66e7.json.new`. It proves that the fixed
+library loaded and the NebuSec boot-ID route began. Kernel-page preparation,
+all four reclaim sends, and cleanup completed. The last user-space boundary
+was:
+
+```text
+slide child context route=pselect pid=21949
+slide cmp_requeue_pi ret=-1 errno=35 polls=1
+slide wait_requeue_pi ret=-1 errno=110
+```
+
+The device then rebooted before `slide pselect returned` or the boot-ID read.
+DropBox tag `SYSTEM_LAST_KMSG_21_20260822_045020_KP` identifies a kernel
+panic; the panic task is `cve43499-run:21952`. This is not a retry miss.
+
+A line-by-line comparison with NebuSec commit
+`e8c777c29473455c4f4032775775ae3018d5f82a` found that the earlier claim
+that only 4.19-backed differences remained was incorrect. The T870 slide
+payload still contained the previous physical-oracle/full-FOPS experiment:
+
+- parent address was the `nfulnl_logger` object instead of
+  `loggers[0][1]`;
+- the fake lock already contained the fake waiter and `owner=1` instead of
+  being empty;
+- the waiter task and PI task were a reclaimed-page `fake_task` instead of
+  `init_task`;
+- the initial waiter priority was 0 instead of the reference value 130.
+
+The corrected source address is derived from the exact release ELF and source,
+not from the panic offset:
+
+```text
+vmlinux symbol loggers          = ffffff800b223d98
+NFPROTO_NUMPROTO                = 13
+NF_LOG_TYPE_MAX                 = 2
+loggers[0][1]                   = ffffff800b223da0
+SLIDE_LOGGERS_0_1_OFF           = 0x031a3da0
+vmlinux symbol nfulnl_logger    = ffffff800b223e70
+SLIDE_NFULNL_LOGGER_OBJECT_OFF  = 0x031a3e70
+```
+
+The `0xd0` distance from `loggers` to `nfulnl_logger` is exactly
+`13 * 2 * sizeof(void *)`, independently confirming the array geometry.
+The two addresses retain their separate upstream roles: the rb-tree source is
+`loggers[0][1]`; the boot-ID leak contains the pointed-to
+`nfulnl_logger.name` value.
+
+The T870 target now uses the upstream slide semantics while retaining only the
+release-backed 4.19 layout adaptations: legacy waiter/lock offsets, the
+one-qword result-set shift, result-copy trigger timing, and the observed
+second-skb `0x180` fragment bias. No reclaim count, KernelSnitch parameter,
+pselect timing, candidate offset, or retry count changed.
+
+NDK r29 built the T870 executable, app payload, root helper, and fixed-size
+release. The default `pa3q-S938NKSUACZF1` target passed the same regression
+build. The release imports only Android libc symbols.
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-upstream-bootid-v2
+size:   104128
+sha256: 6e36b0f4886ce20f0c2a585b14398dfcbcaaae84057b0965790530c7ceea9fa1
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```

