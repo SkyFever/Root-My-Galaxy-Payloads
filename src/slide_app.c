@@ -1,5 +1,9 @@
 #include "common.h"
 
+#if defined(APP_USE_TRACEFS_SLIDE) && APP_USE_TRACEFS_SLIDE
+#include "slide.c"
+#else
+
 #define SLIDE_PSELECT_NFDS PSELECT_ROUTE_NFDS
 #ifndef SLIDE_MAX_ATTEMPTS
 #define SLIDE_MAX_ATTEMPTS 20
@@ -1762,7 +1766,8 @@ static int slide_commit_stext(uint64_t stext, const char *source) {
     return 0;
   }
   uint64_t slide = stext - KIMAGE_TEXT_BASE;
-  if (slide > 0x1f0000ULL || (slide & 0xffffULL) != 0) {
+  if (slide > 0x1f0000ULL ||
+      (slide & (SLIDE_KASLR_ALIGN - 1)) != 0) {
     pr_warning("slide rejected source=%s stext=%016llx slide=%016llx\n",
                source, (unsigned long long)stext,
                (unsigned long long)slide);
@@ -1795,7 +1800,7 @@ int slide_leak_kernel_base(void) {
     errno = 0;
     unsigned long long value = strtoull(forced_offset_arg, &end, 0);
     if (errno || end == forced_offset_arg || *end || value > 0x1f0000ULL ||
-        (value & 0xffffULL) != 0) {
+        (value & (SLIDE_KASLR_ALIGN - 1)) != 0) {
       pr_error("slide invalid forced p0 offset=%s\n", forced_offset_arg);
       return 0;
     }
@@ -1847,7 +1852,7 @@ int slide_leak_kernel_base(void) {
     errno = 0;
     unsigned long long value = strtoull(forced_offset_arg, &end, 0);
     if (errno || end == forced_offset_arg || *end || value > 0x1f0000ULL ||
-        (value & 0xffffULL) != 0) {
+        (value & (SLIDE_KASLR_ALIGN - 1)) != 0) {
       pr_error("slide invalid forced p0 offset=%s\n", forced_offset_arg);
       return 0;
     }
@@ -1948,3 +1953,4 @@ int slide_leak_kernel_base(void) {
   return 0;
 #endif
 }
+#endif

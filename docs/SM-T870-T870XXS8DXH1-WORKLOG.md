@@ -1665,3 +1665,87 @@ size:   104128
 sha256: 6e36b0f4886ce20f0c2a585b14398dfcbcaaae84057b0965790530c7ceea9fa1
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-22 05:06 — v2 panic occurs before the corrected slide trigger
+
+The installed payload SHA-256 was
+`6e36b0f4886ce20f0c2a585b14398dfcbcaaae84057b0965790530c7ceea9fa1`.
+History `778fa3e3-638c-4cb5-b2b4-c10e4fd2b0ac.json.new` shows the corrected
+`loggers[0][1]` and boot-ID addresses, then page preparation and all four
+reclaim sends. It rebooted during cleanup of the 1024 preparation children;
+the pselect/rtmutex trigger never ran.
+
+DropBox `SYSTEM_LAST_KMSG_22_20260822_050751_KP` records a NULL data abort at
+`ffffffc00322e248` in `schedule()`. This address is exactly the hard-coded P0
+alias of `init_task + pi_lock`:
+
+```text
+SLIDE_INIT_TASK                 ffffffc00322d980
+FAKE_TASK_PI_LOCK_OFF          00000000000008c8
+fault address                  ffffffc00322e248
+```
+
+The T870 configuration has 39-bit VA, 4 KiB pages, KASLR, and randomized
+`memstart_addr`. The hard-coded `P0_PHYS_OFFSET=0x80000000` therefore does not
+prove the runtime direct-map alias. Adding the panic's `Kernel Offset` to a
+physical alias would mix virtual KASLR with linear-map randomization and is
+explicitly not used.
+
+### 2026-08-22 05:32 — existing NebuSec tracefs route validated as the safe bootstrap
+
+The installed APK was inspected without changing it. Its Shizuku branch
+stages the payload at `/data/local/tmp/ksu-payload` and launches
+`/system/bin/sh -c true` through `IShizukuService.newProcess()` with
+`LD_PRELOAD` set to that payload. The device currently runs `shizuku_server`
+as UID 2000, and the app preference is `shizuku_mode=true`. This supplies the
+shell/readtracefs execution context expected by the existing `src/slide.c`.
+
+The unmodified non-app payload was then run with `SLIDE_ONLY=1`. It ran as
+`uid=2000`, accessed tracefs, and exited safely with `worker caller not found`;
+no allocator exploit or kernel write ran. A text trace proved that event ID 72
+emits hundreds of `worker_thread+0xa0` records. A raw 4096-byte CPU0 page then
+proved the exact first record layout:
+
+```text
+common_type                    72
+caller                         ffffff80081567c4
+link worker caller             ffffff80080de7c4
+observed runtime slide         0000000000078000
+```
+
+The link caller is independently reproduced from the release `vmlinux.elf`:
+`worker_thread=ffffff80080de724`; the instruction after `bl schedule` is
+`ffffff80080de7c4`, so `SLIDE_TRACEFS_WORKER_CALLER_OFF=0x5e7c4` is correct.
+The rejection came solely from the generic 64-KiB slide-alignment check. This
+T870 4.19/4-KiB boot reports page-aligned slides (`0x78000` in this boot and
+`0x118000` in the preceding panic), so the target now declares
+`SLIDE_KASLR_ALIGN=0x1000`. The generic default remains 64 KiB. No caller
+offset, event ID, symbol address, allocator parameter, or exploit timing was
+changed.
+
+### 2026-08-22 05:40 — T870 app release uses the verified tracefs slide path
+
+T870 defines `APP_USE_TRACEFS_SLIDE=1`. For that target only,
+`slide_app.c` includes the repository's existing `slide.c`; the generic app
+target retains the existing pselect implementation. This is a source-selection
+change, not a new KASLR primitive.
+
+The fixed-size app release was copied to `/data/local/tmp` and run as shell
+with `SLIDE_ONLY=1`, matching the APK's Shizuku launch context. It completed:
+
+```text
+uid=2000 euid=2000 attr=u:r:shell:s0
+label=gts7lwifi-T870XXS8DXH1-app-4.19-tracefs-v3
+slide tracefs caller=ffffff80081567c4 candidate=00078000
+slide-kaslr-ok source=tracefs base=ffffff80080f8000 slide=0000000000078000
+slide-only done
+```
+
+No P0 page preparation, KernelSnitch allocator work, rtmutex trigger, kernel
+write, root helper, or KernelSU installation ran in this validation. Both the
+T870 `all release` build and the default `pa3q-S938NKSUACZF1 all release`
+regression build passed with NDK r29. `targets-v3.json` remains valid and its
+T870 URL is repository-relative as required.
+
+The deployable payload is 104128 bytes with SHA-256
+`c5070a4d014dbafca8efd41257c8abd487c3512fcfd066d870a6b2944be0231c`.

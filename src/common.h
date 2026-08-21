@@ -10,6 +10,10 @@
 #define KS_PAGE_SIZE 4096
 #define KS_PAGE_MASK 0xfffULL
 
+#ifndef SLIDE_KASLR_ALIGN
+#define SLIDE_KASLR_ALIGN 0x10000ULL
+#endif
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
