@@ -661,3 +661,109 @@ size:   104128
 sha256: 4333b30112a9230bed311f04a19556b7e8e0db38a3efc3698463c35209bef822
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-21 16:38 pipe-SLUB-shape result: quota failure before PI
+
+The device downloaded the exact published
+`app-4.19-pipe-slub-shape` artifact. The finalized private history is
+`79b7a236-97d7-4afe-a01c-23b5470fd623.json`. All 24 attempts completed the
+existing KernelSnitch collision/bruteforce path, printed
+`stage=pipe-cache-shaped`, and allocated all 240 drain pipes. Every attempt
+then failed while expanding the reclaim pipes with:
+
+```text
+F_SETPIPE_SZ: Operation not permitted
+```
+
+No PI requeue, pselect, physical-write, or gate line was reached. This run is
+therefore invalid as a gate evaluation and does not show whether the shaped
+slab would reclaim the leaked skb page.
+
+The failure matches the exact stock `fs/pipe.c` accounting. The default soft
+limit is `PIPE_DEF_BUFFERS * INR_OPEN_CUR = 16 * 1024 = 16384` pages. Before
+the reclaim expansion, this candidate holds approximately 14008 charged pipe
+pages: 704 pipes at the two-page minimum, plus about 180 shaped and 240 drain
+pipes expanded from two to 32 slots. Only about 79 additional reclaim pipes
+can then expand before the soft limit rejects the request. Do not interpret
+this EPERM as a PI or gate miss.
+
+### Recovered earlier diagnostics: allocator-only hypothesis is insufficient
+
+The device still retains the earlier local diagnostic logs and the repository
+still retains their local binaries, although these results were accidentally
+omitted from this work log during the reset. They must constrain subsequent
+work:
+
+- 192-message skb readback runs consumed the complete 12 MiB socket payload
+  and reported `changed=0`.
+- Four self-target variants made the rb-tree child target point inside the
+  same leaked order-3 skb payload page, avoiding the pipe-slab placement
+  question entirely.
+- Each self-target run obtained byte-exact pselect result fd-sets,
+  `sched_ok=1`, and successful physical-write status, but the subsequent skb
+  readback still reported `mutation=0`.
+- One recorded example used payload base `ffffffc258478000` and target
+  `ffffffc25847e180`, which are in the same payload allocation.
+
+Consequently the previous conclusion that the repeated gate misses primarily
+prove a kmalloc-2k reclaim miss was too strong. The pipe shaping candidate
+must not merely be resized to fit the quota. First prove why the existing
+Samsung 4.19 scheduler/rtmutex trigger does not mutate even a self-target.
+
+### Current trigger boundary from exact Samsung 4.19 source
+
+`kernel/sched/core.c::__sched_setscheduler()` calls
+`rt_mutex_adjust_pi(p)` whenever the successful `sched_setattr` uses the PI
+path. The exact `kernel/locking/rtmutex.c::rt_mutex_adjust_pi()` returns before
+the chain walk only when `task->pi_blocked_on` is NULL or the stale waiter's
+priority/deadline equals the task's current effective priority/deadline. If it
+continues, `rt_mutex_adjust_prio_chain()` validates the stale waiter and lock,
+then calls `rt_mutex_dequeue(lock, waiter)`; that rb erase is the expected
+write.
+
+The T870 payload currently has two distinct priority values: generated skb
+waiters use target-specific `SLIDE_FAKE_WAITER_PRIO=0`, while the pselect
+result-stack encoder still uses shared `FAKE_WAITER_PRIO=130`. Do not change
+either value blindly. The next diagnostic must record the waiter thread's
+actual scheduler priority around the successful `sched_setattr` and preserve
+the already proven PI ordering, owner synchronization, pselect result route,
+and self-target readback path. This will distinguish the priority-equality
+early return from a lost/overwritten `pi_blocked_on` or later chain-walk
+failure before allocator tuning resumes.
+
+### Published scheduler-priority boundary diagnostic
+
+The target-only pipe shaping defines were removed so this run returns to the
+last quota-safe pipe preparation path. The shared target-override support is
+left in place, but `shape_pipe_cache()` is not enabled for T870 in this
+candidate.
+
+`APP_SCHED_PRIORITY_DIAGNOSTIC` reads
+`/proc/self/task/<waiter-tid>/stat` from the separate consumer thread directly
+before and after the unchanged `sched_setattr`. Exact stock
+`fs/proc/array.c` exports field 18 as `task_prio(task)`, and exact stock
+`kernel/sched/core.c` defines that value as `task->prio - MAX_RT_PRIO`.
+The diagnostic therefore adds 100 and logs the actual effective kernel
+priority alongside field 19's nice value and the pselect stack waiter's fixed
+priority 130. It does not issue another syscall on the stale-waiter thread and
+does not alter the pselect stack words, scheduler request, PI order, owner
+synchronization, or gate target.
+
+Interpret the new line as follows:
+
+- `before_ok=1` and `after_ok=1` make both priority readings authoritative.
+- `after_prio=130` permits the exact `rt_mutex_adjust_pi()` priority-equality
+  early return and requires a priority-specific correction.
+- `after_prio!=130` rules out that early return; an unchanged self-target then
+  points to a missing/overwritten `pi_blocked_on` or a later chain validation
+  exit, not the allocator.
+
+The T870 release and forced default-target regression release both built with
+NDK r29. The fixed-size candidate is:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-sched-prio-diagnostic
+size:   104128
+sha256: 74fc01e8668e3671f66f4c3e9b5a88f4301dcee5fb4fbfd3b4eda966e0d1f74c
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```

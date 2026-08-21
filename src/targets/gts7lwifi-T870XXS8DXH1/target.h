@@ -1,10 +1,11 @@
 #ifndef OFFSET_H
 #define OFFSET_H
 #define BUILD_VARIANT_LABEL \
-  "gts7lwifi-T870XXS8DXH1-app-4.19-pipe-slub-shape"
+  "gts7lwifi-T870XXS8DXH1-app-4.19-sched-prio-diagnostic"
 #define APP_PHYS_P0_ORACLE 1
 #define APP_REQUIRE_FRESH_P0_SESSION 1
 #define APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS 1
+#define APP_SCHED_PRIORITY_DIAGNOSTIC 1
 
 #ifndef BUILD_FINGERPRINT
 #define BUILD_FINGERPRINT \
@@ -22,14 +23,6 @@
  * offset 0x9000 rather than the generic 0x8e80 placement.
  */
 #define SKB_SECOND_PAYLOAD_BIAS 0x180
-
-/*
- * The exact 4.19 SLUB policy gives kmalloc-2k order 3 with 16 objects,
- * min_partial 5, and cpu_partial 6. Run the repository's existing pipe-cache
- * shaping path once before the drain/reclaim allocations.
- */
-#define PIPE_CPU_PARTIAL 6
-#define PIPE_SHAPE_ROUNDS 1
 
 #define MM_STRUCT_SZ 0x400
 #define MM_ORDER 3

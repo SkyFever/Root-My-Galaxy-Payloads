@@ -591,6 +591,58 @@ static int slide_wait_for_pselect_blocked(int tid, size_t timeout_usec,
 }
 #endif
 
+#if defined(APP_SCHED_PRIORITY_DIAGNOSTIC) && \
+    APP_SCHED_PRIORITY_DIAGNOSTIC
+static int slide_read_task_priority(int tid, int *kernel_prio, int *nice) {
+  char path[64];
+  snprintf(path, sizeof(path), "/proc/self/task/%d/stat", tid);
+  int fd = open(path, O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
+    return 0;
+  }
+
+  char buf[1024];
+  ssize_t n = read(fd, buf, sizeof(buf) - 1);
+  close(fd);
+  if (n <= 0) {
+    return 0;
+  }
+  buf[n] = 0;
+
+  char *cursor = strrchr(buf, ')');
+  if (!cursor) {
+    return 0;
+  }
+  cursor++;
+  while (*cursor == ' ') {
+    cursor++;
+  }
+  if (!*cursor) {
+    return 0;
+  }
+  cursor++;
+
+  long long fields[16];
+  for (size_t index = 0; index < 16; index++) {
+    while (*cursor == ' ') {
+      cursor++;
+    }
+    char *end = NULL;
+    errno = 0;
+    fields[index] = strtoll(cursor, &end, 10);
+    if (errno || end == cursor) {
+      return 0;
+    }
+    cursor = end;
+  }
+
+  /* /proc stat field 18 is task_prio() == task->prio - MAX_RT_PRIO. */
+  *kernel_prio = (int)fields[14] + 100;
+  *nice = (int)fields[15];
+  return 1;
+}
+#endif
+
 void *slide_consumer_thread(void *arg __attribute__((unused))) {
   disable_rseq_for_thread();
   pin_to_core(CONSUMER_CORE);
@@ -697,9 +749,29 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
     int entered = atomic_load(&slide_consume_enter_sched) + 1;
     atomic_store(&slide_consume_enter_sched, entered);
     atomic_store(&slide_consume_calls, calls + 1);
+#if defined(APP_SCHED_PRIORITY_DIAGNOSTIC) && \
+    APP_SCHED_PRIORITY_DIAGNOSTIC
+    int before_prio = -1;
+    int before_nice = 0;
+    int before_ok = slide_read_task_priority(
+        tid, &before_prio, &before_nice);
+#endif
     *errno_ptr = 0;
     long ret = sched_setattr_tid(tid, (calls % 19) + 1);
     int saved_errno = *errno_ptr;
+#if defined(APP_SCHED_PRIORITY_DIAGNOSTIC) && \
+    APP_SCHED_PRIORITY_DIAGNOSTIC
+    int after_prio = -1;
+    int after_nice = 0;
+    int after_ok = slide_read_task_priority(
+        tid, &after_prio, &after_nice);
+    pr_info("slide sched priority tid=%d stack_waiter=%d "
+            "before_ok=%d before_prio=%d before_nice=%d "
+            "after_ok=%d after_prio=%d after_nice=%d ret=%ld errno=%d\n",
+            tid, FAKE_WAITER_PRIO,
+            before_ok, before_prio, before_nice,
+            after_ok, after_prio, after_nice, ret, saved_errno);
+#endif
 #if defined(SLIDE_SYNC_PSELECT_SYSCALL) && SLIDE_SYNC_PSELECT_SYSCALL
     pr_info("slide pselect blocked ready=%d ready_usec=%zu ready_wchan=%s "
             "guard=%d guard_usec=%zu guard_wchan=%s age_usec=%llu tid=%d\n",
