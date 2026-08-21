@@ -24,7 +24,16 @@ void *waiter_thread(void *arg __attribute__((unused))) {
   int tid = (int)syscall(SYS_gettid);
   atomic_store(&waiter_tid, tid);
 
-  if (futex_op(&f_pi_chain, FUTEX_LOCK_PI, 0, NULL, NULL, 0) != 0) {
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=waiter-chain-lock-enter tid=%d\n", tid);
+#endif
+  long waiter_chain_ret =
+      futex_op(&f_pi_chain, FUTEX_LOCK_PI, 0, NULL, NULL, 0);
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=waiter-chain-lock-return tid=%d ret=%ld errno=%d\n",
+          tid, waiter_chain_ret, errno);
+#endif
+  if (waiter_chain_ret != 0) {
     pr_error("waiter lock chain errno=%d\n", errno);
   }
 
@@ -38,7 +47,18 @@ void *waiter_thread(void *arg __attribute__((unused))) {
   timeout.tv_sec += ROUTE_WAIT_SECONDS;
 
   atomic_store(&waiter_waiting, 1);
-  futex_op(&f_wait, FUTEX_WAIT_REQUEUE_PI, 0, &timeout, &f_pi_target, 0);
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=wait-requeue-enter tid=%d\n", tid);
+#endif
+  errno = 0;
+  long wait_requeue_ret =
+      futex_op(&f_wait, FUTEX_WAIT_REQUEUE_PI, 0, &timeout, &f_pi_target, 0);
+  (void)wait_requeue_ret;
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=wait-requeue-return tid=%d ret=%ld errno=%d\n",
+          tid, wait_requeue_ret, errno);
+  pr_info("main route stage=pselect-enter tid=%d\n", tid);
+#endif
 
   do_pselect_fake_lock_route();
   atomic_store(&route_done, 1);
@@ -53,7 +73,14 @@ void *waiter_thread(void *arg __attribute__((unused))) {
 void *owner_thread(void *arg __attribute__((unused))) {
   disable_rseq_for_thread();
 
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=owner-target-lock-enter\n");
+#endif
   long lock_target = futex_op(&f_pi_target, FUTEX_LOCK_PI, 0, NULL, NULL, 0);
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=owner-target-lock-return ret=%ld errno=%d\n",
+          lock_target, errno);
+#endif
   if (lock_target != 0) {
     pr_error("owner lock target errno=%d\n", errno);
   }
@@ -63,7 +90,16 @@ void *owner_thread(void *arg __attribute__((unused))) {
   }
 
   atomic_store(&owner_started, 1);
-  futex_op(&f_pi_chain, FUTEX_LOCK_PI, 0, NULL, NULL, 0);
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=owner-chain-lock-enter\n");
+#endif
+  long owner_chain_ret =
+      futex_op(&f_pi_chain, FUTEX_LOCK_PI, 0, NULL, NULL, 0);
+  (void)owner_chain_ret;
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=owner-chain-lock-return ret=%ld errno=%d\n",
+          owner_chain_ret, errno);
+#endif
   atomic_store(&owner_chain_done, 1);
 
   for (;;) {
@@ -148,6 +184,9 @@ void reset_main_route_state(void) {
 
 void run_main_route_threads(void) {
   reset_main_route_state();
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=threads-create-enter page=%016zx\n", page_base);
+#endif
 
   pthread_t waiter;
   pthread_t owner;
@@ -155,14 +194,27 @@ void run_main_route_threads(void) {
   SYSCHK(pthread_create(&waiter, NULL, waiter_thread, NULL));
   SYSCHK(pthread_create(&owner, NULL, owner_thread, NULL));
   SYSCHK(pthread_create(&consumer, NULL, consumer_thread, NULL));
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=threads-create-return\n");
+#endif
 
   while (!atomic_load(&waiter_waiting) || !atomic_load(&owner_started)) {
     usleep(1000);
   }
 
   usleep(100000);
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=cmp-requeue-enter waiter_tid=%d\n",
+          atomic_load(&waiter_tid));
+#endif
   errno = 0;
-  futex_op(&f_wait, FUTEX_CMP_REQUEUE_PI, 1, (void *)1, &f_pi_target, 0);
+  long cmp_requeue_ret =
+      futex_op(&f_wait, FUTEX_CMP_REQUEUE_PI, 1, (void *)1, &f_pi_target, 0);
+  (void)cmp_requeue_ret;
+#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
+  pr_info("main route stage=cmp-requeue-return ret=%ld errno=%d\n",
+          cmp_requeue_ret, errno);
+#endif
 
   while (!atomic_load(&route_done)) {
     if (atomic_exchange(&pipe_prepare_request, 0)) {

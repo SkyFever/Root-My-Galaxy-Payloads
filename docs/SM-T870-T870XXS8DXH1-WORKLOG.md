@@ -1749,3 +1749,46 @@ T870 URL is repository-relative as required.
 
 The deployable payload is 104128 bytes with SHA-256
 `c5070a4d014dbafca8efd41257c8abd487c3512fcfd066d870a6b2944be0231c`.
+
+### 2026-08-22 05:51 - tracefs succeeds; panic moves to upstream FOPS route
+
+The app loaded the published v3 artifact through Shizuku as UID 2000. The
+tracefs route completed with caller `ffffff80081567c4`, slide `0x78000`,
+and runtime text base `ffffff80080f8000`.
+
+The following `PAGE_PAYLOAD_FOPS` preparation also completed. KernelSnitch
+found 3/3 collisions, leaked `ffffffc02b61f800`, selected page
+`ffffffc02b618000` at object index 30, sent all four reclaim messages,
+cleaned KernelSnitch, and reaped all 1024 preparation children. The final app
+record was:
+
+```text
+kernel page prepare mode=0 attempt=1/2 elapsed_ms=7614 base=ffffffc02b618000
+```
+
+The reboot produced DropBox tag
+`SYSTEM_LAST_KMSG_23_20260822_055105_KP`. Its retained kernel text is marked
+truncated and bit-corrupted. The visible CPU 4 and CPU 7 stacks are secondary
+`smp_send_stop` idle-CPU dumps, not the original faulting task, and are not
+used to select offsets or change exploit behavior.
+
+Comparison with NebuSec CyberMeowfia commit
+`e8c777c29473455c4f4032775775ae3018d5f82a` confirms that the next operation
+is the reference `run_main_route_threads()` sequence. The reference has no
+log between FOPS page preparation and its futex/pselect operations. Target-
+gated checkpoints are added around the existing `FUTEX_LOCK_PI`,
+`FUTEX_WAIT_REQUEUE_PI`, `FUTEX_CMP_REQUEUE_PI`, and pselect entry
+boundaries. They do not alter offsets, allocator/reclaim order, futex
+operations, pselect parameters, delays, retry counts, or KernelSnitch profile.
+No behavioral change is allowed until hardware identifies the last completed
+reference boundary.
+
+Build verification completed with Android NDK r29 for both
+`gts7lwifi-T870XXS8DXH1` and the default `pa3q-S938NKSUACZF1` regression
+target. The fixed-size deployable artifact remains 104128 bytes:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-route-checkpoints-v4
+sha256: 2a4ffa85002c3afe5852ddb9dfb8e6b830f3efa9ae94f62082138720f7b2296f
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
