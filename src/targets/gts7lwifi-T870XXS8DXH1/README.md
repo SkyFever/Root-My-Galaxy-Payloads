@@ -10,11 +10,22 @@ Linux 4.19.113-27114284 #1 SMP PREEMPT Mon Aug 5 15:36:53 +07 2024
 The target values come from the exact Samsung release source, stock boot
 Image, recovered symbols and relocations, plus read-only device data.
 
-The repository exploit flow is unchanged. Two target-gated 4.19 compatibility
-branches are enabled:
+The repository exploit flow is unchanged apart from target-gated 4.19
+compatibility branches:
 
 - configfs uses legacy `file_operations.read/write`;
-- the 0x50-byte legacy waiter overlaps the pselect result fd-set at shift 1.
+- the 0x50-byte legacy waiter overlaps the pselect result fd-set at shift 1;
+- the result-copy route triggers while `core_sys_select` still owns its stack,
+  rather than after `__arm64_sys_pselect6` has reused that stack.
+
+The result-copy geometry comes from the exact stock ELF. `__arm64_sys_futex`
+uses `0x70` bytes, `do_futex` uses `0x1e0`, and its waiter is at `sp+0xc0`.
+`__arm64_sys_pselect6` uses `0xa0`, while `core_sys_select` uses `0x1c0` and
+places its stack fd-set storage at `sp+0x50`. With 320 fds (five qwords per
+set), the stale waiter begins at internal qword 16, one qword into the result
+read set. A non-ready sentinel in unused input qword zero lets the consumer
+issue the original `sched_setattr` trigger as soon as result copy-out starts,
+before the syscall wrapper can overwrite the waiter.
 
 Verified corrections versus the discarded experimental target are:
 

