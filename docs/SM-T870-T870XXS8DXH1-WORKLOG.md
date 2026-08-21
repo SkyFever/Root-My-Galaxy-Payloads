@@ -1320,3 +1320,42 @@ size:   104128
 sha256: f349eb7e5f25c71dd8eab4dc470648eb567441fb2ab263c79f2e289bb99a90c5
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-22 — full-FOPS owner-chain self-target result and production transition
+
+Latest app history:
+
+- install history: `d06a0fad-310f-4502-8217-e598b0739dd4.json`
+- loaded label: `gts7lwifi-T870XXS8DXH1-app-4.19-selftarget-full-fops-owner`
+- one attempt completed without a kernel panic or reboot
+- leaked page: `ffffffc0603e6000`, page base: `ffffffc0603e0000`, object index: `24`
+- exact-upstream reclaim completed with `16/16` sends
+- PI route completed through the pselect checkpoint (`pselect ret=224`, `sched_ok=1`)
+- result-copy sentinel was cleared and the physical write status was `ok`
+- the self-target payload mutated the selected skb page:
+  - `stream=20996 send=0 payload_off=5204 before=00 after=ff`
+  - readback reported `changed=27`
+  - result-copy reported `self-target mutation=1`
+
+The app's final `status=255` / Failed display was the diagnostic build's intentional
+termination after `p0 result-copy self-target diagnostic complete`; it was not a
+failed production root attempt. This result confirms that the existing full-FOPS
+geometry carries the T870 4.19 rtmutex owner chain far enough to reclaim and mutate
+the selected skb-backed page.
+
+The next candidate returns to the documented production P0 pipe oracle. It removes
+the self-target stop and applies the same existing full-FOPS construction to every
+P0 oracle bank slot (gate, probe, gate restore, and probe restore), because each
+slot traverses the same Samsung 4.19 owner chain. Allocator topology, PI timing,
+reclaim counts, kernel offsets, and exploit sequencing are otherwise unchanged.
+`APP_SLIDE_FRESH_PAGE_ATTEMPTS` remains `1`.
+
+The T870 release and default `pa3q-S938NKSUACZF1` regression release both built
+with NDK r29.
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-p0-full-fops-oracle
+size:   104128
+sha256: ca63c8f4b226ca4bd8a7235dca6fccb8f9797d0b843f7412a5cb2bc46e298a87
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```

@@ -290,9 +290,9 @@ static void put_slide_bank_entry(unsigned char *p, uintptr_t payload_base,
   }
 #endif
 
-#if defined(APP_P0_GATE_FULL_FOPS_GEOMETRY) && \
-    APP_P0_GATE_FULL_FOPS_GEOMETRY
-  if (slot == P0_ORACLE_GATE_SLOT) {
+#if defined(APP_P0_ORACLE_FULL_FOPS_GEOMETRY) && \
+    APP_P0_ORACLE_FULL_FOPS_GEOMETRY
+  if (slot < SLIDE_BANK_SLOTS) {
     /* Match the established non-banked PAGE_PAYLOAD_FOPS construction. */
     lock_owner = task | 1;
     waiter_task = text_addr(INIT_TASK);
