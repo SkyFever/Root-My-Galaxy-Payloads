@@ -1868,3 +1868,40 @@ url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 The first new distinguishing line is `pselect result-copy ready=...`. A valid
 route must report `ready=1`, `sentinel_cleared=1`, and one successful
 consumer call before the CFI/configfs stage.
+
+## 2026-08-22: main result-route priority transition (v6)
+
+The v5 device run reached the target-only result-copy route on all four
+independent FOPS page preparations without a panic or reboot. Each attempt
+reported `ready=1`, `sentinel_cleared=1`, `syscall_returned=1`, and one
+successful `sched_setattr` call. The following CFI read consistently found
+the original `ashmem_misc.fops`, so the remaining failure was specifically
+that the PI-chain write had not occurred.
+
+The release kernel source explains that boundary exactly. In
+`kernel/locking/rtmutex.c`, `rt_mutex_adjust_prio_chain()` replaces the stale
+waiter's priority with `task->prio` before deciding whether the stale waiter
+became the new top waiter. Only that top-waiter transition reaches
+`rt_mutex_dequeue_pi()` and consumes the crafted `pi_tree_entry` used for the
+FOPS write. The main route used nice 19 (normal priority 139), while the fake
+waiter priority is 130, so the fake waiter remained on top and the write was
+skipped.
+
+The earlier T870 result-copy checkpoint already verified the intended
+transition on hardware with nice 1 (normal priority 121), including a cleared
+result sentinel, successful consumer call, and self-target page mutation.
+The v6 change therefore only adds a target-specific
+`PSELECT_CONSUMER_NICE=1`; the common/default value remains 19. No timing,
+allocator, symbol, offset, reclaim, futex, retry, or page-layout parameter was
+changed. Both the T870 and default `pa3q-S938NKSUACZF1` `all release` builds
+pass with NDK r29.
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-main-result-prio-v6
+sha256: eb3bc206a0d7a8c21c2b7b95005239052051d570f08102d1a6922cf3482321d4
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
+
+The next device run should retain the v5 result-copy diagnostics. The decisive
+new boundary is whether the subsequent CFI read observes the fake FOPS pointer
+and proceeds to the existing upstream configfs/KernelSU stages.
