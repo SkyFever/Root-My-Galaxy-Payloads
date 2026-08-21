@@ -1359,3 +1359,97 @@ size:   104128
 sha256: ca63c8f4b226ca4bd8a7235dca6fccb8f9797d0b843f7412a5cb2bc46e298a87
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-22 03:26 — production P0 run invalid during post-reclaim cleanup
+
+The authoritative crash history is the unfinished app-private file
+`ef3c67d3-0209-48ea-aa1c-298ecd4a6d5d.json.new`. It loaded the expected
+`gts7lwifi-T870XXS8DXH1-app-4.19-p0-full-fops-oracle` artifact. The initial
+240-pipe oracle completed, and the payload-page preparation completed its
+second collision search, brute force, exact-upstream reclaim, and all 16 skb
+sends. Its final surviving checkpoints were:
+
+```text
+mm leaked=ffffffc08ef06400 base=ffffffc08ef00000 object_index=25
+mm late cpu-partial drain triggers=0
+sk_buff reclaim sends=16/16 mode=1 stop_errno=0
+kernel page cleanup stage=kernelsnitch done mode=1
+kernel page cleanup stage=prepare-children progress=256/1024
+kernel page cleanup stage=prepare-children progress=512/1024
+kernel page cleanup stage=prepare-children progress=768/1024
+```
+
+There is no `prepare-children done`, page-prepare completion, rtmutex trigger,
+P0 gate result, or root-helper result. The device rebooted; the first check
+after reconnect reported about 150 seconds of uptime. Both Android boot-reason
+properties report only `reboot`, and the current non-root ADB session cannot
+read pstore. DropBox did not yet expose a `SYSTEM_LAST_KMSG` entry.
+
+This run fails before the candidate's P0 gate boundary and therefore neither
+accepts nor rejects the production oracle. Earlier runs of the same documented
+pipe-oracle-to-payload transition have both rebooted and completed all
+1024/1024 prepare-child cleanup, so this one result does not justify changing
+KernelSnitch counts, allocator order, reclaim counts, PI order, or timing. The
+next hardware action is to repeat the same published artifact.
+
+Correction to the preceding interpretation: a successful self-target mutation
+proves the rb-tree erase write reached the skb-backed target; it does not by
+itself prove that the later 4.19 rtmutex owner chain completed. Also,
+`put_slide_bank_entry()` is not used by the inline `PAGE_PAYLOAD_SLIDE` bank
+construction, so `APP_P0_ORACLE_FULL_FOPS_GEOMETRY` did not cause that earlier
+self-target mutation and does not alter the current slide-bank entries. Do not
+extend or tune that macro based on this run. Remove the unused target-only
+macro and shared block with the next evidence-backed code change rather than
+publishing another behaviorally equivalent payload now.
+
+### 2026-08-22 03:37 — valid production P0 gate miss
+
+The finalized app-private history is
+`fed2cb90-3c1e-4466-99ed-44e182b56e13.json`. It loaded the expected
+`gts7lwifi-T870XXS8DXH1-app-4.19-p0-full-fops-oracle` artifact and completed
+the boundary that the preceding reboot did not reach:
+
+```text
+kernel page cleanup stage=prepare-children progress=1024/1024
+kernel page cleanup stage=prepare-children done base=ffffffc045568000
+kernel page diagnostic stage=complete mode=1 base=ffffffc045568000 reclaim_sent=16/16
+slide cmp_requeue_pi ret=-1 errno=35 polls=1
+slide wait_requeue_pi ret=-1 errno=110
+slide pselect returned nfds=320 pad=0 ret=220 errno=0 sched_ok=1
+slide result-copy trigger sentinel_cleared=1 seen_after_return=0 syscall_returned=1
+p0 physical write status=0 ok=1
+p0 physical slot=0 write attempt=1/1 delay=25000 nfds=320 pad=0
+p0 pipe gate hits=0 changed=0
+p0 fresh page result=0 attempt=1/1
+```
+
+This is a valid one-page gate miss: the existing PI/result-copy route ran, but
+this prepared skb page did not mutate the pipe oracle. The earlier self-target
+mutation proves that the same existing rb-tree write can reach a reclaimed skb
+page on hardware, so a single allocation miss does not justify a new primitive
+or version-specific timing change.
+
+The referenced upstream exploit retries freshly prepared kernel pages. The app
+path already implements the same target-only loop under
+`APP_SLIDE_FRESH_PAGE_ATTEMPTS`; the value of `1` was retained from the bounded
+diagnostic stage. Restore the previously calculated eight-attempt bound, which
+fits the 45-second P0 supervisor window based on measured per-page preparation
+time and stops immediately on a gate hit. The existing clean pipe oracle is
+reused after a zero-change gate miss. No allocator order/count, KernelSnitch
+profile, PI sequence, pselect timing, target address, or kernel offset changes.
+
+Also remove the unused `APP_P0_ORACLE_FULL_FOPS_GEOMETRY` target flag and its
+shared `put_slide_bank_entry()` block. The production slide payload is built by
+the separate inline `PAGE_PAYLOAD_SLIDE` path, so retaining that block would
+only carry an unsupported change into a later FOPS-mode path.
+
+The T870 release and default `pa3q-S938NKSUACZF1` regression release both
+built with NDK r29. The support manifest remains valid, its artifact URL is
+repository-relative, and the fixed release size remains 104128 bytes:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-p0-oracle-retry8
+size:   104128
+sha256: b40a6385c2e179b50b76719e9ef59ccf88d2624aae23a414ddc1a7a7cbfdee39
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
