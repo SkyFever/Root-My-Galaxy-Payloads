@@ -42,8 +42,8 @@ defconfig: arch/arm64/configs/vendor/gts7lwifi_eur_open_defconfig
 ## Current published checkpoint build
 
 ```text
-label: gts7lwifi-T870XXS8DXH1-app-4.19-upstream-reclaim-retry8
-artifact SHA-256: f5aee5a238c6c3d1f69c186a15337f561d96c03e150002f7ac0d0ce23421fef7
+label: gts7lwifi-T870XXS8DXH1-app-4.19-selftarget-no-pipe-retry8
+artifact SHA-256: 35c4708bc0f6251985761f2a4e6895d0c67c111ed7b76b4846bdfb79a602f4e3
 ```
 
 This target-only candidate restores the referenced upstream
@@ -1143,3 +1143,68 @@ size:   104128
 sha256: f5aee5a238c6c3d1f69c186a15337f561d96c03e150002f7ac0d0ce23421fef7
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-22 02:10 retry8 run: invalid before first payload reclaim
+
+The finalized private history is
+`eac5f28a-b6eb-481e-9c31-8fe37bce41ef.json`. It loaded the expected retry8
+build. The initial 240-pipe P0 oracle completed, including its first full
+KernelSnitch run, but the first payload-page preparation stopped immediately
+after:
+
+```text
+p0 pipe oracle prepared base=ffffffc0ec8e8000 pipes=240 gate_slots=1
+p0 diagnostic stage=kernel-page-prepare-enter pipe_base=ffffffc0ec8e8000
+kernel page diagnostic stage=begin mode=1 objects_per_slab=32
+```
+
+No payload-page KernelSnitch profile, reclaim, trigger, or self-target result
+was reached. The device rebooted and produced
+`SYSTEM_LAST_KMSG_17_20260822_022257_KP`; the new boot ID is
+`37622424-e484-4dc3-a58b-6339d00bee83`. This run is not evidence against the
+retry8 reclaim candidate.
+
+### Remove the unused pipe oracle from the self-target diagnostic
+
+The self-target slot in `prepare_skb_payload()` derives both operands solely
+from the candidate payload page:
+
+```text
+parent = direct_to_page(base)
+target = payload_base + APP_SLIDE_SELF_TARGET_OFF
+```
+
+It never reads `pipebuf_page_base`; after the trigger it drains and compares
+the reclaim socket directly. Nevertheless `slide_leak_physical_base()` first
+runs the complete 240-pipe oracle preparation, then immediately starts a
+second 1024-prepare/192-spray process topology for the actual payload page.
+The latest panic occurred in that unused-oracle-to-payload transition.
+
+The next target-only diagnostic defines
+`APP_SLIDE_SELF_TARGET_SKIP_PIPE_ORACLE`. It skips only the unused first pipe
+oracle when `APP_SLIDE_SELF_TARGET_DIAGNOSTIC` is active. The payload-page
+KernelSnitch profile, exact upstream mm reclaim order, skb data, result-copy
+trigger, PI geometry, self-target readback, and bounded eight-page retry are
+unchanged. Production P0 and every other target retain the normal pipe-oracle
+preparation.
+
+The T870 release and forced default-target regression release both build with
+NDK r29. The support validator accepts all 11 payload entries. The published
+diagnostic candidate is:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-selftarget-no-pipe-retry8
+size:   104128
+sha256: 35c4708bc0f6251985761f2a4e6895d0c67c111ed7b76b4846bdfb79a602f4e3
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
+
+The first distinguishing line must be:
+
+```text
+p0 self-target diagnostic skipping unused pipe oracle
+```
+
+It should be followed directly by the payload-page preparation with
+`pipe_base=0000000000000000`; no `p0 pipe page diagnostic stage=begin` should
+precede it.
