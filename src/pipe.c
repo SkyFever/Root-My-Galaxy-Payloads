@@ -4,7 +4,9 @@
 #include P0_FINGERPRINT_HEADER
 #endif
 
+#ifndef PIPE_SHAPE_ROUNDS
 #define PIPE_SHAPE_ROUNDS 0
+#endif
 #define PHYSRW_PROOF_OFF 0x7000
 #define PHYS_READ_TAG "nebusec_70687973727730"
 #define PHYS_WRITE_TAG "nebusec_70687973727731"

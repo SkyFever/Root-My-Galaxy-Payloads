@@ -545,3 +545,119 @@ size:   104128
 sha256: 5d278571b715247d65609a5d3fa688d81195845141edc2fc98dd41dfd02e60d1
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-21 15:56 second-fragment candidate: invalid hardware run
+
+The device used the exact published artifact with SHA-256
+`5d278571b715247d65609a5d3fa688d81195845141edc2fc98dd41dfd02e60d1`
+and reported the expected `app-4.19-second-frag-layout` label. The finalized
+history is `6ebc3b56-8c5b-4ed1-872c-a1d49cb3fbac.json`.
+
+This run is not evidence for or against the second-fragment correction. It
+completed in about 7.6 seconds and stopped during the second KernelSnitch
+collision scan, before `prepare_good_kernel_page()` returned and before any
+PI, pselect, physical-write, or pipe-gate checkpoint:
+
+```text
+[*] kernel page diagnostic stage=topology-ready ...
+[*] KernelSnitch collision diagnostic stage=pileup-return
+[*] KernelSnitch collision diagnostic stage=scan-enter total=65536 wanted=3
+```
+
+Android logcat gives the cause at `15:56:01.436`: ActivityManager killed the
+payload supervisor PID 20787, payload PID 20788, and the KernelSnitch child
+processes with `Trimming phantom processes`. There was no fatal signal report,
+kernel panic, or device reboot. Both
+`activity_manager/max_phantom_processes` and
+`settings_enable_monitor_phantom_procs` are unset, so Android used its default
+phantom-process policy.
+
+Do not change the exploit route, skb layout, PI order, or timeout based on this
+run. The next hardware run must first prevent Android's phantom-process trimmer
+from killing the intentionally large KernelSnitch process group; then rerun
+the same published artifact so the second-fragment correction actually reaches
+the existing gate check.
+
+For that rerun, set only the scoped ActivityManager key through adb:
+
+```text
+device_config activity_manager/max_phantom_processes = 2147483647
+```
+
+The previous value was unset (`null`). Restore the device default after the
+porting session with `device_config delete activity_manager
+max_phantom_processes`. The broader
+`settings_enable_monitor_phantom_procs` switch was not changed.
+
+### 2026-08-21 16:10 valid second-fragment run: 24 gate misses
+
+With the scoped phantom-process limit in place, the same published
+`app-4.19-second-frag-layout` artifact completed normally. The finalized
+history is `cb935eae-979f-4ffa-8d45-07f02d111fa1.json`; it ran for about 426
+seconds and completed all 24 independent attempts. ActivityManager did not
+trim the supervisor, payload, or KernelSnitch children during this run.
+
+Every attempt completed both KernelSnitch/page preparations and the complete
+hardware-proven trigger sequence:
+
+```text
+slide cmp_requeue_pi ret=-1 errno=35 polls=1
+slide wait_requeue_pi ret=-1 errno=110
+slide chain unlock complete
+slide owner chain acquired
+slide pselect returned ... sched_ok=1 last_sched_ret=0
+p0 physical write status=0 ok=1
+p0 pipe gate hits=0 changed=0
+```
+
+The second-fragment correction is therefore insufficient to make the gate
+change, but its `0x180` bias remains correct. The first skb's page fragment
+starts at source `0x0e80`. The second starts at `0x9000`; because fake kernel
+pointers use `payload_base = base - 0x0e80`, the second generator base must be
+`0x9000 - 0x0e80 = 0x8180`, which is chunk `0x8000 + 0x180`. Do not revert or
+retune this bias based on the gate misses.
+
+Freeze the now repeatedly validated PI ordering, owner synchronization,
+pselect result route and word shift, scheduler trigger, physical write call,
+and skb fragment layout. The repeated unchanged gate shifts the active
+question to whether the leaked order-3 skb page is actually reclaimed as a
+kmalloc-2k pipe-buffer slab.
+
+### Exact 4.19 SLUB audit and next candidate
+
+The stock `mm/slub.c`, stock config, and exact pipe allocation size give:
+
+```text
+CONFIG_SLUB=y
+CONFIG_SLUB_CPU_PARTIAL=y
+CONFIG_NR_CPUS=8
+pipe ring bytes: 32 * sizeof(pipe_buffer=0x28) = 0x500 -> kmalloc-2k
+kmalloc-2k slab order: 3
+objects per slab: 16
+min_partial: ilog2(0x800) / 2 = 5
+cpu_partial: 6 (the 1024 <= size < PAGE_SIZE branch)
+```
+
+The shared exploit constants used `PIPE_CPU_PARTIAL=2`, which is the stock
+rule for cache objects at least one page in size, not for this 2 KiB cache.
+Also, `PIPE_SHAPE_ROUNDS` has remained zero since the repository's initial
+publication, so the already implemented `shape_pipe_cache()` path has never
+run. The unshaped 240-object drain can be satisfied by existing per-CPU/node
+partial slabs and does not guarantee that the subsequently freed skb order-3
+page is selected for the 240 reclaim objects.
+
+Next candidate: preserve the shared defaults, allow target overrides, and for
+T870 only set `PIPE_CPU_PARTIAL=6` and `PIPE_SHAPE_ROUNDS=1`. This activates
+the repository's existing cache-shaping sequence once with values derived
+from this exact kernel. It does not change the exploit primitive, page leak,
+PI route, skb payload, drain/reclaim counts, or gate.
+
+The T870 release and a forced default-target regression release both built
+successfully with NDK r29. The fixed-size hardware candidate is:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-pipe-slub-shape
+size:   104128
+sha256: 4333b30112a9230bed311f04a19556b7e8e0db38a3efc3698463c35209bef822
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
