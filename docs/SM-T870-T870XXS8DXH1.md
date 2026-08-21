@@ -67,7 +67,7 @@ at 104128 bytes:
 
 ```text
 artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
-SHA-256: 150b3795dfa4da86485d033b9ac02ffe509deb9032e8a4917e0190328fdedb2d
+SHA-256: 1cc3b9245cf57572e177d8911a81fe1037e4f76f65e27da39e4c171ba0501eac
 ```
 
 ### KernelSnitch page-prepare diagnostic
@@ -110,14 +110,13 @@ baseline, waiter-pileup, collision-scan, and waiter-decrease phases inside the
 existing KernelSnitch collision routine. No timed measurement or exploit
 behavior is changed.
 
-### Exact legacy pselect trigger window
+### Exact legacy pselect result route
 
-The first production hardware run reached the legacy pselect route on every
+The first result-route hardware runs reached the legacy pselect route on every
 recorded attempt, and `sched_setattr` returned zero, but the P0 pipe oracle
-reported `hits=0 changed=0`. The previous result-route implementation started
-`sched_setattr` only after `pselect6` had returned to userspace. Matching the
-copied userspace fd-sets proves their contents, but it does not prove that the
-freed kernel-stack waiter survived the arm64 syscall-return path.
+reported `hits=0 changed=0`. Those runs predated the T870-specific correction
+to the PI-requeue ordering. They do not validate the later in-kernel route and
+do not test the corrected PI ordering together with the result route.
 
 The exact stock ELF fixes both the overlap and the required execution window:
 
@@ -129,17 +128,25 @@ stale waiter from syscall SP:  -0x190
 
 __arm64_sys_pselect6 frame:    0x0a0
 core_sys_select frame:         0x1c0
-result fd-set base:            syscall SP - 0x198
-waiter word zero:              result qword 1
+stack fd-set base:             syscall SP - 0x210
+result input fd-set base:      syscall SP - 0x198
+waiter word zero:              result input qword 1
 ```
 
-This independently confirms `SLIDE_PSELECT_WORD_SHIFT=1`. The full trigger
-payload now follows the stock-ELF-derived in-kernel route: it checks the waiter
-thread's same-process `/proc` syscall and wchan entries until the thread is
-blocked in `pselect6`/`do_select`, rechecks the state immediately before
-`sched_setattr`, and accepts the successful scheduler trigger while pselect is
-still inside the kernel. The pselect timeout is 500 ms and the trigger-age
-guard is 150 ms. The post-return result route and its null timeout are not used.
+This independently confirms `SLIDE_PSELECT_WORD_SHIFT=1`, but it also rejects
+the in-kernel input route. With `nfds=320`, the three input sets occupy qwords
+0 through 14, while the stale waiter starts at qword 16. `core_sys_select()`
+zeros the three result sets before entering `do_select()`, so triggering while
+pselect is blocked presents a zero waiter lock and can fault in
+`_raw_spin_trylock()`.
+
+The T870 payload therefore uses the existing `SLIDE_PSELECT_RESULT_ROUTE` and
+its null timeout. `/dev/null` makes every selected read/write descriptor ready;
+after `pselect6` returns, byte-for-byte matching result masks prove that all ten
+legacy waiter qwords were materialized in the overlapping result sets. The
+pselect thread then stays in userspace while the consumer invokes
+`sched_setattr`. The T870-only upstream PI-requeue order and owner-acquired
+synchronization remain enabled.
 
 The same exact defconfig was compiled with debug information to audit the
 remaining legacy geometry. It confirms the checked-in `rt_mutex_waiter`,

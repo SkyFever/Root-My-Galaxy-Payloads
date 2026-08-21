@@ -408,3 +408,79 @@ label:  gts7lwifi-T870XXS8DXH1-app-4.19-pi-owner-sync
 size:   104128
 sha256: 640e573857d4145aaa672e187609e09c9b07291a325e832e76426e75cdd2c914
 ```
+
+### 2026-08-21 15:10 owner-sync hardware result and pselect correction
+
+The device downloaded the exact 104128-byte owner-sync artifact with SHA-256
+`640e573857d4145aaa672e187609e09c9b07291a325e832e76426e75cdd2c914`.
+The incomplete private history
+`f2ae8cb1-959c-48e9-bebe-dc34300ce4f8.json.new` ends with:
+
+```text
+slide cmp_requeue_pi ret=-1 errno=35 polls=1
+slide wait_requeue_pi ret=-1 errno=110
+slide chain unlock complete
+slide owner chain acquired
+slide pselect enter
+```
+
+The device then rebooted before a pselect-return line was preserved. This
+proves that the T870-specific PI requeue, chain unlock, and owner-acquired
+synchronization all completed. Freeze that sequence; the active failure is the
+pselect/scheduler trigger that follows it.
+
+The exact stock ELF was re-audited rather than inferring the failure from the
+missing log line. Let `E` be the stack pointer at syscall-wrapper entry:
+
+```text
+__arm64_sys_futex frame:       0x070
+do_futex frame:                0x1e0
+rt_mutex_waiter:               do_futex sp + 0x0c0 = E - 0x190
+
+__arm64_sys_pselect6 frame:    0x0a0
+core_sys_select frame:         0x1c0
+stack fd-set base:             core sp + 0x050 = E - 0x210
+result input fd-set base:      E - 0x198
+stale waiter word zero:        result input qword 1
+```
+
+For `nfds=320`, each set is five qwords. The input sets occupy overall qwords
+0 through 14; the result sets begin at qword 15 and the stale waiter begins at
+qword 16. The exact `core_sys_select()` disassembly also shows three `memset`
+calls that zero the result sets before `do_select()`. Consequently the current
+in-kernel blocked-pselect route cannot supply the stale waiter: its lock qword
+is zero at the scheduler trigger. This matches the earlier panic at
+`_raw_spin_trylock+0x1c`, where the exact instruction dereferences the supplied
+lock pointer.
+
+The original T870 port record had already derived this same geometry and
+explicitly rejected the direct input route. Commit `8295018` later replaced
+the existing result route with the incompatible in-kernel route; its claim
+that the result area was usable while pselect remained blocked was incorrect.
+
+Historical result-route runs are still useful but not conclusive for the
+corrected route. They repeatedly proved byte-matching result fdsets and
+`sched_setattr` success, then reported `p0 pipe gate hits=0 changed=0`. All of
+those binaries used the older PI ordering. The exact gate target remains the
+active `pipe_buffer.page` at the leaked order-3 pipe slab plus object offset
+`0x800`; no historical run reported a changed page. Therefore do not label the
+old result as a reclaim miss without additional evidence.
+
+Next action: restore the existing `SLIDE_PSELECT_RESULT_ROUTE=1` and null
+timeout only for T870, retain the hardware-proven upstream PI order and owner
+synchronization, and remove the incompatible blocked-pselect guards. This is
+the first build that combines the correct result-set geometry with the
+corrected PI sequence; it does not add a new exploit primitive or change page
+preparation, reclaim, waiter layout, priority values, or the P0 gate.
+
+The result-route/PI-order release built successfully with NDK r29. A forced
+release rebuild of the default `pa3q-S938NKSUACZF1` target also completed. The
+support manifest parses, keeps repository-relative URLs, and still records the
+fixed exploit size:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-result-route-pi-order
+size:   104128
+sha256: 1cc3b9245cf57572e177d8911a81fe1037e4f76f65e27da39e4c171ba0501eac
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
