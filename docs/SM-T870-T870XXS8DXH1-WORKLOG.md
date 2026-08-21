@@ -42,13 +42,13 @@ defconfig: arch/arm64/configs/vendor/gts7lwifi_eur_open_defconfig
 ## Current published checkpoint build
 
 ```text
-label: gts7lwifi-T870XXS8DXH1-app-ks-collision-checkpoint
-artifact SHA-256: 150b3795dfa4da86485d033b9ac02ffe509deb9032e8a4917e0190328fdedb2d
+label: gts7lwifi-T870XXS8DXH1-app-4.19-upstream-mm-reclaim
+artifact SHA-256: 95042eff164f76ed077df103de79e7382e170dcba3b01c2895d7ec0796a589b3
 ```
 
-Only `APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS` is enabled. KernelSnitch verbose
-mode, diagnostic stop, exploit parameters, and pselect timing are unchanged
-from the preceding production build.
+This target-only candidate restores the referenced upstream
+`prepare_kernel_page()` mm-to-skb reclaim order. It retains the result-copy
+and self-target diagnostics and fixes the supervisor to one hardware attempt.
 
 ## Hardware observations
 
@@ -697,18 +697,20 @@ work:
 - 192-message skb readback runs consumed the complete 12 MiB socket payload
   and reported `changed=0`.
 - Four self-target variants made the rb-tree child target point inside the
-  same leaked order-3 skb payload page, avoiding the pipe-slab placement
-  question entirely.
+  same candidate order-3 skb payload page, avoiding only the later pipe-slab
+  placement question.
 - Each self-target run obtained byte-exact pselect result fd-sets,
   `sched_ok=1`, and successful physical-write status, but the subsequent skb
   readback still reported `mutation=0`.
 - One recorded example used payload base `ffffffc258478000` and target
   `ffffffc25847e180`, which are in the same payload allocation.
 
-Consequently the previous conclusion that the repeated gate misses primarily
-prove a kmalloc-2k reclaim miss was too strong. The pipe shaping candidate
-must not merely be resized to fit the quota. First prove why the existing
-Samsung 4.19 scheduler/rtmutex trigger does not mutate even a self-target.
+Correction: these reads do not prove that an skb fragment reclaimed the freed
+`mm_struct` page at `base`. They only prove that the bytes returned by the
+reclaim socket were unchanged. If none of the 16 skb fragments landed at
+`base`, the fake lock never existed at the leaked address and a zero mutation
+is expected. The earlier conclusion that the allocator was excluded was
+wrong; PI ordering must not be changed further on this evidence.
 
 ### Current trigger boundary from exact Samsung 4.19 source
 
@@ -911,11 +913,11 @@ fake lock, or skb allocation:
    byte-for-byte with the generated 64 KiB payload;
 4. the diagnostic stops after one independent exploit attempt.
 
-This removes the pipe-slab placement question from the new timing test. A
-nonzero `p0 result-copy self-target mutation` proves that PI dequeue ran and
-returns the active boundary to pipe allocation. A zero result means the exact
-Samsung 4.19 chain still exited before `rt_mutex_dequeue()` despite EDEADLK,
-priority mismatch, and the in-kernel result-copy window.
+This removes only the later pipe-slab placement question from the new timing
+test. A nonzero `p0 result-copy self-target mutation` proves both that an skb
+fragment reclaimed `base` and that PI dequeue wrote to it. A zero result is
+ambiguous: either the first `mm_struct`-to-skb reclaim missed `base`, or the
+Samsung 4.19 chain exited before `rt_mutex_dequeue()`.
 
 The T870 release and a forced default-target regression release both build
 with NDK r29. The fixed-size diagnostic candidate is:
@@ -946,11 +948,10 @@ sk_buff self-target readback total=1048576/1048576 sends=16 changed=0 errno=0
 p0 result-copy self-target mutation=0
 ```
 
-This is a valid negative result for the combined diagnostic. It rules out the
-pipe-slab placement question and disproves the hypothesis that the current
-result-copy trigger reaches `rt_mutex_dequeue()` with the existing
-owner-acquired sequencing. Do not tune reclaim, priority, delay, or target
-addresses from this result.
+This is a valid negative result for the combined diagnostic, but it rules out
+only the later pipe-slab placement question. It does not distinguish a miss in
+the first `mm_struct`-to-skb reclaim from an exit before
+`rt_mutex_dequeue()`. The previous stronger conclusion was incorrect.
 
 ### Restore the remaining upstream PI ordering difference
 
@@ -986,3 +987,85 @@ size:   104128
 sha256: a28eea3c8955c45d8ba87301dde15277d41383ac507b940b8ef56366a9b81439
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-21 20:06 upstream-owner-order result and reclaim correction
+
+The finalized private history is
+`ca0b74bf-c20f-48b1-ac64-ddd0e013948c.json`. The app loaded the exact
+`gts7lwifi-T870XXS8DXH1-app-4.19-upstream-owner-order` artifact and honored
+the target's fixed single attempt. The complete original owner ordering,
+result-copy sentinel, physical-write wrapper, and self-target readback all
+completed, but the returned 1 MiB socket stream was unchanged:
+
+```text
+mm leaked=ffffffc20b990800 base=ffffffc20b990000 object_index=2
+mm late cpu-partial drain triggers=32
+sk_buff reclaim sends=16/16 mode=1 stop_errno=0
+slide result-copy trigger sentinel_cleared=1 seen_after_return=0 syscall_returned=1
+p0 physical write status=0 ok=1
+sk_buff self-target readback total=1048576/1048576 sends=16 changed=0 errno=0
+p0 result-copy self-target mutation=0 target=ffffffc20b996180
+```
+
+Removing the owner wait therefore had no observed effect. More importantly,
+the self-target diagnostic cannot establish that any skb fragment reclaimed
+the freed order-3 page at `base`. It bypasses only the second-stage pipe-slab
+placement. The earlier work-log statements treating `mutation=0` as proof of
+an rt_mutex-chain exit are withdrawn.
+
+### Exact Samsung 4.19 mm_struct SLUB audit
+
+The exact stock source creates `mm_cachep` in `kernel/fork.c` with
+`SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_ACCOUNT`; none of those flags enables
+SLUB debugging for this cache. The exact defconfig enables
+`CONFIG_SLUB_CPU_PARTIAL=y`, enables the debug implementation, but does not
+enable `CONFIG_SLUB_DEBUG_ON`.
+
+For T870, `MM_STRUCT_SZ=0x400`, so the exact `mm/slub.c::set_cpu_partial()`
+selects `cpu_partial=6` through its `s->size >= 1024` branch. Each order-3
+slab holds 32 objects. The referenced upstream exploit uses
+`MM_PARTIALS=5`, producing six spray slabs, and its reclaim sequence is:
+
+1. close all 31 `pre_ctx` memfds;
+2. close the first 31 of 32 `post_ctx` memfds;
+3. close one memfd from each of the six spray slabs;
+4. close the shaping sockets and yield four times;
+5. close `memfd_leak`;
+6. immediately send the skb reclaim payloads;
+7. clean up KernelSnitch and the retained prepare processes afterward.
+
+The repository's shared implementation instead seeds the spray partials
+first, splits the pre/post neighbor closes, and after closing `memfd_leak`
+frees one object from each of 32 prepare slabs before sending the skbs. Those
+extra 32 late-drain operations are present in the repository's initial public
+commit, but they are not in the referenced upstream
+`prepare_kernel_page()` and are not required by the exact T870 threshold of
+six.
+
+Decision: add a target-only `APP_UPSTREAM_MM_RECLAIM_ORDER` switch. For T870
+it restores the six upstream steps above and skips the 32 prepare-slab late
+drains. Other targets retain the repository's current shared behavior. This
+does not change KernelSnitch counts, PI/pselect ordering, target offsets,
+scheduler parameters, skb count, or the exploit route.
+
+The T870 release and forced default-target regression release both build with
+NDK r29. The support validator accepts all 11 payload entries, and the
+manifest path remains repository-relative. The fixed-size candidate is:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-upstream-mm-reclaim
+size:   104128
+sha256: 95042eff164f76ed077df103de79e7382e170dcba3b01c2895d7ec0796a589b3
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
+
+Expected hardware distinction from the preceding build:
+
+```text
+mm late cpu-partial drain triggers=0
+```
+
+The preceding `mm target-neighbor slab queued for late drain` line must be
+absent. Any interpretation still requires the complete self-target readback;
+this candidate tests the exact upstream first-stage reclaim, not a new exploit
+or another PI timing permutation.

