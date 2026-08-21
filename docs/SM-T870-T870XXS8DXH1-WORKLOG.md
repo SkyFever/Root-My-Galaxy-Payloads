@@ -42,8 +42,8 @@ defconfig: arch/arm64/configs/vendor/gts7lwifi_eur_open_defconfig
 ## Current published checkpoint build
 
 ```text
-label: gts7lwifi-T870XXS8DXH1-app-4.19-upstream-mm-reclaim
-artifact SHA-256: 95042eff164f76ed077df103de79e7382e170dcba3b01c2895d7ec0796a589b3
+label: gts7lwifi-T870XXS8DXH1-app-4.19-upstream-reclaim-retry8
+artifact SHA-256: f5aee5a238c6c3d1f69c186a15337f561d96c03e150002f7ac0d0ce23421fef7
 ```
 
 This target-only candidate restores the referenced upstream
@@ -1069,3 +1069,77 @@ The preceding `mm target-neighbor slab queued for late drain` line must be
 absent. Any interpretation still requires the complete self-target readback;
 this candidate tests the exact upstream first-stage reclaim, not a new exploit
 or another PI timing permutation.
+
+### 2026-08-21 19:57 upstream-mm-reclaim run: invalid before test boundary
+
+The finalized private history is
+`bebc7674-b9b8-4ff3-900c-9e26739def10.json`. It loaded the expected
+`gts7lwifi-T870XXS8DXH1-app-4.19-upstream-mm-reclaim` artifact. The first P0
+pipe-page preparation completed, but the second KernelSnitch run stopped after:
+
+```text
+KernelSnitch collision diagnostic stage=pileup-enter waiters=2048 bucket=128
+kernel page diagnostic stage=topology-ready prepare=1024 spray=192 pre=31 post=32 leak_pid=868
+```
+
+There is no `pileup-return`, collision result, leaked `mm_struct`, reclaim
+message, or self-target readback. The device rebooted at approximately 19:58
+and produced `SYSTEM_LAST_KMSG_16_20260821_195858_KP`; boot ID afterward was
+`798296e8-3c57-4b5a-8e9d-977c23749fe7`. The retained pstore identifies the
+panic task as `cve43499-run`, but its beginning is truncated before the
+initiating CPU0 exception and preserves only the other CPUs' stop traces.
+
+This run never executed `APP_UPSTREAM_MM_RECLAIM_ORDER` and therefore cannot
+accept or reject the candidate. Do not change reclaim or PI code from this
+result. Repeat the same published artifact until it reaches
+`mm late cpu-partial drain triggers=0` and the complete self-target readback.
+
+### 2026-08-21 21:05 valid upstream-mm-reclaim result
+
+The finalized private history is
+`ed6c8d95-a62f-4c40-a99e-a80494c82b5b.json`. It loaded the expected build and
+completed both KernelSnitch passes, the target-only upstream reclaim order,
+the result-copy trigger, and the complete socket readback:
+
+```text
+mm leaked=ffffffc1026ce000 base=ffffffc1026c8000 object_index=24
+mm late cpu-partial drain triggers=0
+sk_buff reclaim sends=16/16 mode=1 stop_errno=0
+slide result-copy trigger sentinel_cleared=1 seen_after_return=0 syscall_returned=1
+sk_buff self-target readback total=1048576/1048576 sends=16 changed=0 errno=0
+p0 result-copy self-target mutation=0 target=ffffffc1026ce180
+```
+
+This is the first valid negative result for the exact upstream mm-to-skb
+release order. It shows that removing the repository's 32 prepare-slab late
+drains did not produce a mutation on this allocation. A single result still
+does not distinguish a probabilistic first reclaim miss from an rt_mutex exit.
+
+### Restore the existing upstream page-attempt meaning
+
+The referenced upstream `slide_leak_kernel_base()` does not treat its first
+prepared page as conclusive. It loops through `SLIDE_MAX_ATTEMPTS` and performs
+a fresh `prepare_good_kernel_page(PAGE_PAYLOAD_SLIDE)` before each trigger.
+The current app P0 path already has an `APP_SLIDE_FRESH_PAGE_ATTEMPTS` loop,
+but the self-target diagnostic unconditionally returns after its first
+readback, so it cannot exercise that existing retry mechanism.
+
+The next candidate changes no allocator order, count, skb geometry, PI field,
+pselect route, or timing. Under a T870-only `APP_SLIDE_SELF_TARGET_RETRY`, an
+unchanged self-target readback advances the existing fresh-page loop. It stops
+immediately on a mutation. `APP_SLIDE_FRESH_PAGE_ATTEMPTS=8` is the largest
+bounded sample expected to remain within the supervisor's 45-second P0 limit:
+the valid first attempt took 3.890 seconds after the pipe oracle, while the
+one-time pipe-oracle setup remains reused. The outer supervisor remains fixed
+at one independent process so a single app run cannot expand to 24 sessions.
+
+The T870 release and forced default-target regression release both build with
+NDK r29, the support validator accepts all 11 payload entries, and the
+repository-relative URL is unchanged:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-upstream-reclaim-retry8
+size:   104128
+sha256: f5aee5a238c6c3d1f69c186a15337f561d96c03e150002f7ac0d0ce23421fef7
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
