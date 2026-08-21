@@ -26,6 +26,8 @@ between KMIs.
 | `ksud-samsung-android14-6.1-kdp` | Same verified 6.1 targets | `android14-6.1` | Late-load binary embedding the 6.1 module |
 | `android12-5.10_kernelsu-samsung-kdp.ko` | `SM-A155N` `A155NKSS6BYH1` | `android12-5.10` | Standalone Samsung KDP/RKP/DEFEX module built against the exact A15 kernel |
 | `ksud-samsung-android12-5.10-kdp` | `SM-A155N` `A155NKSS6BYH1` | `android12-5.10` | Late-load binary embedding the 5.10 module |
+| `legacy-4.19_kernelsu-gts7lwifi-T870XXS8DXH1-kdp.ko` | `SM-T870`, `T870XXS8DXH1` | `legacy-4.19` | Exact 4.19.113 module, audited for manual relocation and Samsung KDP/RKP/DEFEX compatibility |
+| `ksud-gts7lwifi-T870XXS8DXH1-kdp` | Same exact T870 build | `legacy-4.19` | Android 33 late-load binary embedding the exact T870 module |
 
 The standalone `.ko` files are retained for auditing. Root My Galaxy downloads
 the corresponding `ksud-*` file because `ksud late-load` loads its embedded
@@ -50,7 +52,9 @@ KernelSU version code `32525` for manager compatibility. The A36 AYG1 pair
 uses the same fail-closed Samsung path, reports the exact A36 kernel release,
 passes the recovered-target symbol audit, and was loaded on hardware with
 KernelSU Manager reporting `Working <LKM> [Jailbreak mode]` and version
-`32525-2`. The 5.10 files are also build-verified and device-untested.
+`32525-2`. The 5.10 files are also build-verified and device-untested. The
+T870 4.19 pair is exact-release, build-verified and static-audited; hardware
+execution remains pending.
 
 ## Why the stock module crashes on Samsung
 
@@ -91,6 +95,14 @@ contains the complete source delta from the tagged v3.2.5 tree:
 - stage `ksud` at `/data/local/tmp/.ksud-stage`, rename it onto the same
   `/data` filesystem before loading the module, then finish labels/assets after
   the module is active.
+- provide compiler-selected compatibility shims for pre-5.x VFS, credential,
+  task, SELinux and syscall APIs used by Samsung 4.19;
+- retain the reboot-magic Manager FD path through `sys_enter` tracepoints when
+  the target has syscall tracepoints but `CONFIG_KPROBES=n`;
+- on Samsung 4.19, delegate protected credential lifetime to the stock
+  KDP-aware `commit_creds()` and `put_cred()` implementations;
+- recognize kernels without an Android KMI suffix as `legacy-<major>.<minor>`
+  so the exact embedded 4.19 module can be selected.
 
 ## 6.1 generalization
 
@@ -125,6 +137,39 @@ therefore has a zero-length `__versions` section, as required by
 undefined imports were checked against the recovered A15 `vmlinux`; the KDP,
 DEFEX, syscall-table, and kprobe symbols resolved by name were checked
 separately.
+
+## 4.19 generalization
+
+The SM-T870 stock source predates several APIs used by current KernelSU. The
+patch uses version-gated compatibility only where the exact 4.19 compiler or
+target source requires it. The target has `CONFIG_KPROBES=n` and syscall
+tracepoints enabled, so the original reboot-magic FD delivery is registered on
+`sys_enter` instead of being replaced with a new control mechanism. Samsung's
+stock 4.19 `commit_creds()` and `put_cred()` already contain the KDP protected-
+credential paths; calling them avoids importing newer KDP helpers that do not
+exist in this release.
+
+The exact module vermagic is:
+
+```text
+4.19.113-27114284 SMP preempt mod_unload modversions aarch64
+```
+
+The manual-relocation audit against the recovered target ELF and exact
+`Module.symvers` reports 183 undefined imports, zero missing target symbols,
+zero module version entries, and zero CRC mismatches. The stripped standalone
+module is copied into `userspace/ksud/bin/aarch64/legacy-4.19_kernelsu.ko`
+before building the Android 33 AArch64 late-load binary.
+
+```text
+legacy-4.19_kernelsu-gts7lwifi-T870XXS8DXH1-kdp.ko
+size: 208368
+SHA-256: 84c44917d566caf1be60ef7e6400abe2065117051b872d790b62de76741edd3a
+
+ksud-gts7lwifi-T870XXS8DXH1-kdp
+size: 4731432
+SHA-256: e0f450acea5b948b5f8a5b7013666e1c3cd98dd40fa178057e493abd9c8e458e
+```
 
 ## Rebuild
 

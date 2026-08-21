@@ -177,6 +177,20 @@
         "url": "kernelsu/ksud-e1s-S921NKSSFDZF3-kdp",
         "size": 4758872
       }
+    },
+    {
+      "payloadId": "gts7lwifi-T870XXS8DXH1",
+      "displayName": "Galaxy Tab S7 | Kernel 4.19.113",
+      "models": ["SM-T870"],
+      "kernelVersions": ["4.19.113"],
+      "exploit": {
+        "url": "artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so",
+        "size": 104128
+      },
+      "kernelsu": {
+        "url": "kernelsu/ksud-gts7lwifi-T870XXS8DXH1-kdp",
+        "size": 4731432
+      }
     }
   ]
 }

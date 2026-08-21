@@ -182,6 +182,27 @@ static int install_workqueue_umh_root(int fd) {
     return 0;
   }
 
+#if defined(ROOT_SIG_ENFORCE)
+  uint8_t module_sig_disabled = 0;
+  uintptr_t sig_enforce_addr = data_addr(ROOT_SIG_ENFORCE);
+  ssize_t sig_write = kernel_write_data(
+      fd, sig_enforce_addr, &module_sig_disabled, sizeof(module_sig_disabled));
+  if (sig_write != (ssize_t)sizeof(module_sig_disabled)) {
+    pr_error("root umh module signature write failed ret=%zd\n", sig_write);
+    return 0;
+  }
+#endif
+#if defined(ROOT_DEFEX_BOOT_STATE_UNLOCKED)
+  uint8_t defex_unlocked = 1;
+  uintptr_t defex_state_addr = data_addr(ROOT_DEFEX_BOOT_STATE_UNLOCKED);
+  ssize_t defex_write = kernel_write_data(
+      fd, defex_state_addr, &defex_unlocked, sizeof(defex_unlocked));
+  if (defex_write != (ssize_t)sizeof(defex_unlocked)) {
+    pr_error("root umh DEFEX state write failed ret=%zd\n", defex_write);
+    return 0;
+  }
+#endif
+
   uintptr_t wq_slot = data_addr(SYSTEM_UNBOUND_WQ);
   uintptr_t wq = root_read64(fd, wq_slot);
   uintptr_t pwq = root_read64(fd, wq + WQ_DFL_PWQ_OFF);
