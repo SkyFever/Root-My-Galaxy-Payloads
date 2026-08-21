@@ -851,3 +851,78 @@ size:   104128
 sha256: f6f9c2b61f33d9d1d7dba3615e553c3089198f8fb7cedf4b3abd2577d3783a53
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-21 18:46 result-copy hardware result
+
+The device loaded the exact
+`gts7lwifi-T870XXS8DXH1-app-4.19-result-copy-trigger` artifact. The finalized
+private history is `166b02f8-747e-40a9-b0bf-a64e0130aa3d.json`. All 24
+independent attempts completed page preparation, the single upstream-style PI
+requeue, chain-owner synchronization, pselect, `sched_setattr`, and the
+physical-write wrapper. Every attempt reported:
+
+```text
+slide result-copy trigger sentinel_cleared=1 seen_after_return=0 syscall_returned=1
+p0 physical write status=0 ok=1
+p0 pipe gate hits=0 changed=0
+```
+
+The consumer therefore observed the first `core_sys_select()` result copy and
+entered `sched_setattr` before the pselect thread executed its first userspace
+instruction after syscall return. The failure rules out the earlier
+post-return synchronization as the sole cause, but the pipe target still
+leaves its separate kmalloc-2k reclaim placement unresolved.
+
+The exact recovered device ELF also confirms that the target is vulnerable,
+not merely the released Samsung source. `remove_waiter()` at
+`ffffff8008148d74` reads `SP_EL0`, locks `current->pi_lock` at `+0x8c8`, and
+stores zero to `current->pi_blocked_on` at `+0x8f8`; it does not load
+`waiter->task` before that store. This is the vulnerable CVE-2026-43499 proxy
+rollback behavior. The exact `rt_mutex_adjust_pi()` at `ffffff8008147bac`
+loads the stale pointer from the target task at `+0x8f8`, the waiter lock at
+`+0x38`, and calls the chain walk when the already measured priorities differ.
+
+### Correction to the earlier self-target interpretation
+
+The retained 06:14 and later self-target binaries did not use
+`prepare_p0_diag_gate_payload()`. They changed slot zero in the normal
+`prepare_skb_payload()` bank and therefore did use T870's already checked
+`rt_mutex` offsets `waiters.root=+0x10`, `leftmost=+0x18`, and `owner=+0x20`.
+Those readbacks remain valid evidence that the old, userspace-after-return
+trigger did not mutate the reclaimed skb payload. They do not test the new
+result-copy window.
+
+Separately, the unused arbitrary-R/W diagnostic helper did hardcode the
+generic lock offsets `+0x08/+0x10/+0x18`. It is corrected to use the target
+macros so it cannot silently construct the wrong 4.19 lock if used later.
+
+### Combined result-copy/self-target boundary
+
+The next candidate combines the two existing diagnostic boundaries without
+changing the CVE setup, scheduler request, pselect stack layout, fake task,
+fake lock, or skb allocation:
+
+1. slot zero uses the retained self-target geometry from the earlier hardware
+   runs: `parent=direct_to_page(base)` and
+   `target=payload_base+0x7000`;
+2. the result-copy sentinel invokes the unchanged `sched_setattr` while
+   `core_sys_select()` is still copying result fd-sets;
+3. after the child exits, the existing reclaim socket is drained and compared
+   byte-for-byte with the generated 64 KiB payload;
+4. the diagnostic stops after one independent exploit attempt.
+
+This removes the pipe-slab placement question from the new timing test. A
+nonzero `p0 result-copy self-target mutation` proves that PI dequeue ran and
+returns the active boundary to pipe allocation. A zero result means the exact
+Samsung 4.19 chain still exited before `rt_mutex_dequeue()` despite EDEADLK,
+priority mismatch, and the in-kernel result-copy window.
+
+The T870 release and a forced default-target regression release both build
+with NDK r29. The fixed-size diagnostic candidate is:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-result-copy-self-target
+size:   104128
+sha256: 7476810816b71bcb5668397d7cf3b61666967ec7ddfbc86643470c782e532143
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```

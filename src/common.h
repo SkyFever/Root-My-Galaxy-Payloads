@@ -376,6 +376,10 @@ int open_memfd(pid_t child);
 void kill_child(pid_t child);
 void close_reclaim_sockets(void);
 int reclaim_receiver_fd(void);
+#if defined(APP_SLIDE_SELF_TARGET_DIAGNOSTIC) && \
+    APP_SLIDE_SELF_TARGET_DIAGNOSTIC
+int read_slide_reclaim_self_target(void);
+#endif
 void setup_kernelsnitch(void);
 int kernelsnitch_collisions_ready(void);
 void run_kernelsnitch_bruteforce(void);
