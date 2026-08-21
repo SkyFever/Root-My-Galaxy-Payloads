@@ -1792,3 +1792,79 @@ label:  gts7lwifi-T870XXS8DXH1-app-4.19-route-checkpoints-v4
 sha256: 2a4ffa85002c3afe5852ddb9dfb8e6b830f3efa9ae94f62082138720f7b2296f
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-22 06:29-06:50 - v4 repeats the exact 4.19 EDEADLK boundary
+
+Two independent v4 runs completed tracefs KASLR discovery and the full
+`PAGE_PAYLOAD_FOPS` preparation, including all four reclaim sends,
+KernelSnitch cleanup, and all 1024 preparation children. Both then reached the
+same main-route boundary:
+
+```text
+main route stage=waiter-chain-lock-return ret=0 errno=0
+main route stage=owner-target-lock-return ret=0 errno=0
+main route stage=cmp-requeue-return ret=-1 errno=35
+```
+
+Neither run recorded `wait-requeue-return` or entered the generic pselect
+route. The two leaked pages and waiter TIDs differed, so this is not tied to a
+single reclaimed address. In the exact released Samsung 4.19 source,
+`futex_requeue()` calls `rt_mutex_start_proxy_lock()`; the deliberately
+formed owner/waiter cycle returns `-EDEADLK` (errno 35). The
+`FUTEX_WAIT_REQUEUE_PI` waiter remains on its original futex and later exits
+with `ETIMEDOUT`. The errno 35 result is therefore the reference vulnerability
+setup, not a reason to change the futex operation, allocator, offset, or delay.
+
+The v4 checkpoint after `FUTEX_WAIT_REQUEUE_PI` is removed. Once the vulnerable
+waiter returns, an intervening log write is another syscall on the same thread
+and can overwrite the stale kernel-stack waiter before pselect materializes the
+replacement bytes.
+
+### Connect the verified T870 legacy result route to the main FOPS stage
+
+The T870 target already defines `SLIDE_PSELECT_WORD_SHIFT=1`,
+`SLIDE_PSELECT_RESULT_ROUTE=1`, and `SLIDE_RESULT_COPY_TRIGGER=1`. Hardware
+previously validated that implementation through:
+
+```text
+slide cmp_requeue_pi ret=-1 errno=35
+slide wait_requeue_pi ret=-1 errno=110
+slide result-copy trigger sentinel_cleared=1 seen_after_return=0 syscall_returned=1
+slide pselect returned ... sched_ok=1
+```
+
+However, `APP_USE_TRACEFS_SLIDE=1` makes `slide_app.c` include `slide.c`,
+so those legacy pselect helpers are not compiled into the tracefs build. The
+subsequent upstream main FOPS route remained in `fops.c` and still serialized
+the generic 0x70-byte waiter into the input fd-sets, used an exception bit, and
+triggered its consumer by a fixed delay. This is incompatible with the exact
+T870 stack analysis already recorded in `SM-T870-T870XXS8DXH1.md`:
+`core_sys_select()` clears the input-route overlap, while the complete
+0x50-byte waiter starts at result-input qword 1.
+
+The target-only `APP_MAIN_PSELECT_RESULT_ROUTE` now connects that existing
+4.19 adaptation to the main FOPS stage:
+
+- serialize the legacy tree, PI-tree, task, lock, priority, and deadline qwords
+  from logical fd-set word 1;
+- retain the upstream FOPS semantics: `fake_w0`, `init_task`, `fake_lock`,
+  and `FAKE_WAITER_PRIO`;
+- use `/dev/null` read/write result masks with no exception bits;
+- reuse fd 63 as the result-copy sentinel and restore its prior descriptor;
+- issue one `sched_setattr` only when the copied result clears that sentinel;
+- keep the waiter thread in userspace until the consumer call completes.
+
+No kernel symbol, structure offset, page-reclaim order, KernelSnitch parameter,
+futex operation, pselect delay, retry count, or payload-page geometry changed.
+The T870 and default `pa3q-S938NKSUACZF1` `all release` builds pass with NDK
+r29. The fixed release remains 104128 bytes:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-main-result-route-v5
+sha256: 0f1f544260bc26a24638ffd8f35f08ccb6db4c3115d9e2786392e30226b0e66c
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
+
+The first new distinguishing line is `pselect result-copy ready=...`. A valid
+route must report `ready=1`, `sentinel_cleared=1`, and one successful
+consumer call before the CFI/configfs stage.
