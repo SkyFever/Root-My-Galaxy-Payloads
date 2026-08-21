@@ -767,3 +767,87 @@ size:   104128
 sha256: 74fc01e8668e3671f66f4c3e9b5a88f4301dcee5fb4fbfd3b4eda966e0d1f74c
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-21 18:17 scheduler-priority diagnostic result
+
+The device loaded the exact
+`gts7lwifi-T870XXS8DXH1-app-4.19-sched-prio-diagnostic` build. The finalized
+history is `a175c360-8a26-4b18-8b81-b4c666b40348.json`. All 24 attempts
+completed page preparation, PI requeue ordering, owner synchronization,
+pselect result-mask validation, the scheduler call, and the physical-write
+call. Every attempt then reported `p0 pipe gate hits=0 changed=0`.
+
+All 24 priority readings were identical:
+
+```text
+stack_waiter=130
+before_ok=1 before_prio=120 before_nice=0
+after_ok=1  after_prio=121  after_nice=1
+sched_setattr ret=0 errno=0
+```
+
+This rules out the exact Samsung 4.19 `rt_mutex_adjust_pi()`
+priority-equality early return: the stale waiter's priority 130 differs from
+both the pre-call effective priority 120 and the post-call effective priority
+121. Do not change either waiter priority based on this failure.
+
+The earlier self-target readback failures and this result together move the
+active boundary away from pipe allocation and priority selection. The stale
+waiter must either be unavailable by the time the result-route consumer calls
+`sched_setattr`, or the subsequent chain validation/dequeue is not reached.
+
+### Exact result-copy window and next 4.19 synchronization
+
+The repository-referenced upstream exploit at commit
+`e8c777c29473455c4f4032775775ae3018d5f82a` triggers while pselect is in the
+kernel. That works for targets whose waiter overlaps controllable input
+fd-sets. T870's exact legacy waiter instead begins at result qword 1, so its
+complete data exists only after `do_select()` has populated the kernel result
+sets.
+
+Exact stock source and ELF show this order in `core_sys_select()`:
+
+```text
+do_select()
+copy res_in  to userspace
+copy res_out to userspace
+copy res_ex  to userspace
+return from core_sys_select()
+```
+
+The preceding result qword 0 does not overlap the waiter. The next candidate
+uses that otherwise unused qword as a copyout sentinel:
+
+1. preserve fd 63, because it may belong to the existing physical pipe
+   oracle;
+2. temporarily duplicate an empty pipe read end onto fd 63 and select its bit
+   only in the input set;
+3. arm the existing consumer before entering pselect;
+4. busy-wait on the shared userspace input word;
+5. call the unchanged `sched_setattr` immediately when the first result copy
+   clears the not-ready sentinel bit;
+6. restore fd 63 before the physical pipe oracle is inspected.
+
+At the detection point, all fake waiter words are already populated in the
+kernel result arrays, while `core_sys_select()` still has the second and third
+result copies to perform. This changes only T870's synchronization boundary;
+the CVE primitive, futex order, waiter layout and values, fake lock, physical
+target, page preparation, and pipe gate are unchanged.
+
+The new diagnostic line reports whether the consumer observed the sentinel
+before the pselect thread executed its first userspace instruction after the
+syscall:
+
+```text
+slide result-copy trigger sentinel_cleared=1 seen_after_return=0 ...
+```
+
+The T870 release and forced default-target regression release both built with
+NDK r29. The fixed-size candidate is:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-result-copy-trigger
+size:   104128
+sha256: f6f9c2b61f33d9d1d7dba3615e553c3089198f8fb7cedf4b3abd2577d3783a53
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
