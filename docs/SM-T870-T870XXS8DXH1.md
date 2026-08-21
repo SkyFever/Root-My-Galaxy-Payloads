@@ -67,7 +67,7 @@ at 104128 bytes:
 
 ```text
 artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
-SHA-256: 1cc3b9245cf57572e177d8911a81fe1037e4f76f65e27da39e4c171ba0501eac
+SHA-256: 5d278571b715247d65609a5d3fa688d81195845141edc2fc98dd41dfd02e60d1
 ```
 
 ### KernelSnitch page-prepare diagnostic
@@ -153,7 +153,16 @@ remaining legacy geometry. It confirms the checked-in `rt_mutex_waiter`,
 `rt_mutex`, `task_struct`, `struct page`, `pipe_buffer`, PAGE_OFFSET and
 VMEMMAP values. `sizeof(struct skb_shared_info) == 0x150`; aligned to the
 64-byte cache line this is `0x180`, so `SKB_MAX_HEAD(0) == 0xe80` and the
-checked-in `SKB_DATA_DELTA=-0xe80` is also retained.
+checked-in `SKB_DATA_DELTA=-0xe80` is retained for the first fragment.
+
+The exact 4.19 `unix_stream_sendmsg()` loop also requires a distinct placement
+for the second fragment in the same 64 KiB send. The first skb is `0x8e80`
+bytes with a `0xe80`-byte linear head, so its order-3 fragment starts at source
+offset `0x0e80`. The remaining skb is `0x7180` bytes; page-aligning its
+`0x6300` candidate data length produces a `0x7000` fragment and a `0x180`-byte
+linear head, so that fragment starts at overall source offset `0x9000`. The
+T870-only `SKB_SECOND_PAYLOAD_BIAS=0x180` makes the existing payload generator
+materialize the same fake objects at both actual fragment starts.
 
 ## 4. Exact KernelSU 4.19 build
 

