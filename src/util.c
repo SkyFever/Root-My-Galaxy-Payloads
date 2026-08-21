@@ -530,7 +530,10 @@ uintptr_t p0_alias_image_offset(uintptr_t data_alias) {
 }
 
 uintptr_t data_addr(uintptr_t image_addr) {
-#if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
+#if defined(APP_UPSTREAM_P0_DATA_ALIAS) && APP_UPSTREAM_P0_DATA_ALIAS
+  return p0_data_alias(image_addr);
+#elif defined(APP_REQUIRE_FRESH_P0_SESSION) && \
+    APP_REQUIRE_FRESH_P0_SESSION
   uintptr_t address = p0_data_alias(image_addr);
   return data_alias_uses_slide ? address + slide_p0_offset : address;
 #else

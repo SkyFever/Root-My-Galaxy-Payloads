@@ -1905,3 +1905,49 @@ url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 The next device run should retain the v5 result-copy diagnostics. The decisive
 new boundary is whether the subsequent CFI read observes the fake FOPS pointer
 and proceeds to the existing upstream configfs/KernelSU stages.
+
+## 2026-08-22 09:03: v6 write proves the upstream P0 alias is required (v7)
+
+The app history
+`6f00ef9e-a078-4ae7-b5fb-fbeea444ae2d.json` loaded the v6 label and retained
+output only through `KernelSnitch collision diagnostic stage=scan-enter`.
+That last userspace line is not the actual failure boundary: the device
+rebooted, and Samsung saved
+`/data/log/dumpstate_lastkmsg_31_20260822_090345_KP.log.gz`.
+
+The retained kernel panic gives the exact later boundary:
+
+```text
+Unable to handle kernel paging request at virtual address ffffffc00342d1e8
+WnR = 1
+pc : rb_erase_cached+0x188/0x3f8
+lr : rt_mutex_adjust_prio_chain+0x524/0x858
+Call trace:
+ rb_erase_cached
+ rt_mutex_adjust_pi
+ __sched_setscheduler
+ __arm64_sys_sched_setattr
+Kernel Offset: 0xa0000 from 0xffffff8008000000
+```
+
+This proves that v6's priority transition reached the intended PI erase/write;
+the crash was the address supplied to that write. For this target,
+`p0_data_alias(ASHMEM_MISC_FOPS)` is `ffffffc00338d1e8`. The faulting address
+is exactly that alias plus the current text KASLR slide `0xa0000`:
+`ffffffc00342d1e8`.
+
+NebuSec's current reference implementation keeps these address domains
+separate: `data_addr()` returns `p0_data_alias(image_addr)` without adding the
+text slide, while `text_addr()` applies the recovered KASLR base. The fork's
+generic helper added `slide_p0_offset` to the P0 alias. T870 v7 restores the
+reference behavior only for this target with `APP_UPSTREAM_P0_DATA_ALIAS=1`.
+The v6 result-copy route and verified nice-1 transition remain unchanged; no
+timing, allocator, symbol offset, reclaim, futex, retry, or page geometry was
+modified. The T870 and default `pa3q-S938NKSUACZF1` `all release` builds pass
+with NDK r29.
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-upstream-p0-alias-v7
+sha256: f38a9e0a48967f48caaaade8a5d6b2cefc8e718c1b66e9aa427604d00fe6ae53
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
