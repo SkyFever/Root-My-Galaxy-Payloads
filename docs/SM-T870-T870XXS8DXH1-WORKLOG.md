@@ -926,3 +926,63 @@ size:   104128
 sha256: 7476810816b71bcb5668397d7cf3b61666967ec7ddfbc86643470c782e532143
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-21 19:27 combined boundary result
+
+The device loaded the exact
+`gts7lwifi-T870XXS8DXH1-app-4.19-result-copy-self-target` artifact. The
+finalized private history is
+`79fad7cd-5523-489e-aaff-897cdc0e46a6.json`. The app supplied
+`EXPLOIT_ATTEMPTS=24`, so the supervisor overrode the target's default of one
+attempt. All 24 attempts reached the combined boundary. Every reclaim socket
+returned the complete 16-send, 1 MiB stream, but no byte differed from the
+generated payload:
+
+```text
+slide cmp_requeue_pi ret=-1 errno=35 polls=1
+slide wait_requeue_pi ret=-1 errno=110
+slide result-copy trigger sentinel_cleared=1 seen_after_return=0 syscall_returned=1
+sk_buff self-target readback total=1048576/1048576 sends=16 changed=0 errno=0
+p0 result-copy self-target mutation=0
+```
+
+This is a valid negative result for the combined diagnostic. It rules out the
+pipe-slab placement question and disproves the hypothesis that the current
+result-copy trigger reaches `rt_mutex_dequeue()` with the existing
+owner-acquired sequencing. Do not tune reclaim, priority, delay, or target
+addresses from this result.
+
+### Restore the remaining upstream PI ordering difference
+
+The exact upstream exploit at
+`e8c777c29473455c4f4032775775ae3018d5f82a` unlocks `slide_f_pi_chain` and
+enters `slide_pselect_stack_copy()` without waiting for the owner thread to
+set a userspace `owner_acquired` flag. T870 currently adds that wait through
+`SLIDE_WAIT_OWNER_BEFORE_PSELECT`; it is the remaining deliberate sequencing
+difference in this boundary.
+
+The 15:05 no-owner-wait run cannot be used against this correction. That run
+used the subsequently rejected blocked-input pselect route. Exact ELF geometry
+shows that route left the stale waiter's lock qword zero, and the retained
+panic at `_raw_spin_trylock+0x1c` matches that invalid pointer. The current
+result route instead provides the complete legacy waiter in the result arrays,
+and its byte-exact copyout has been repeatedly verified on hardware.
+
+The next candidate therefore changes one behavior only: remove
+`SLIDE_WAIT_OWNER_BEFORE_PSELECT` for T870 and retain the single upstream-style
+PI requeue, 50 ms waiter timeout, result-route layout, result-copy sentinel,
+and self-target readback. It does not add a payload route or modify any kernel
+offset, waiter field, priority, allocator count, or timing parameter. The
+diagnostic also defines `APP_FIXED_EXPLOIT_ATTEMPTS=1` so the app's environment
+cannot turn one boundary test into 24 identical exploit processes.
+
+The T870 release and forced default-target regression release both build with
+NDK r29. The support validator still accepts all 11 payload entries, and the
+manifest remains repository-relative. The fixed-size hardware candidate is:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-upstream-owner-order
+size:   104128
+sha256: a28eea3c8955c45d8ba87301dde15277d41383ac507b940b8ef56366a9b81439
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```

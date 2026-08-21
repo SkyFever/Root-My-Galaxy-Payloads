@@ -111,8 +111,12 @@ __attribute__((constructor)) static void load(void) {
   set_unbuffer();
   wait_for_boot_quiet_window();
 
+#if defined(APP_FIXED_EXPLOIT_ATTEMPTS)
+  int max_attempts = APP_FIXED_EXPLOIT_ATTEMPTS;
+#else
   int max_attempts = env_int(
       "EXPLOIT_ATTEMPTS", DEFAULT_EXPLOIT_ATTEMPTS, 1, 64);
+#endif
   int base_delay = env_int(
       "PSELECT_DELAY_USEC", DEFAULT_PSELECT_DELAY_USEC, 0, 1000000);
   int attempt_timeout_sec = env_int(
