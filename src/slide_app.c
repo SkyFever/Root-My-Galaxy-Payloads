@@ -1,5 +1,6 @@
 #include "common.h"
 
+#define SLIDE_PSELECT_NFDS PSELECT_ROUTE_NFDS
 #ifndef SLIDE_MAX_ATTEMPTS
 #define SLIDE_MAX_ATTEMPTS 20
 #endif

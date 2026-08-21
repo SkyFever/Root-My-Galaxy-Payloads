@@ -1453,3 +1453,111 @@ size:   104128
 sha256: b40a6385c2e179b50b76719e9ef59ccf88d2624aae23a414ddc1a7a7cbfdee39
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-22 03:56 — retry8 invalid due to Android phantom-process trimming
+
+The finalized history is `8ebc516e-4e0c-481e-9d83-7b511a7f4817.json`.
+The first fresh page completed the full trigger and produced a clean gate miss.
+The second fresh page reached KernelSnitch collision `scan-enter`, after which
+the payload exited with status 137. Logcat identifies the exact external cause:
+
+```text
+ActivityManager: Killing PhantomProcessRecord ... 24812 ...:
+Trimming phantom processes
+```
+
+PID 24812 was the exploit child. ActivityManager killed its supervisor and
+KernelSnitch children at the same time. The device did not reboot and the run
+ended after about 13.6 seconds, so this was neither the 45-second P0 timeout nor
+a kernel exploit failure. Both phantom-process settings were `null` before the
+run. Following the existing documented procedure, the user explicitly approved
+and ADB applied only:
+
+```text
+device_config activity_manager/max_phantom_processes = 2147483647
+```
+
+The broader `settings_enable_monitor_phantom_procs` setting remains unchanged.
+
+### 2026-08-22 04:13 — retry8 second page interrupted by cleanup reboot
+
+The authoritative history is the longer unfinished file
+`d4eec27a-314e-4139-a254-c224a4c87974.json.new`. With the scoped phantom limit
+active, the first page again completed the full trigger and produced a clean
+gate miss. The second page completed collision search, brute force, exact
+upstream reclaim, and all 16 sends, then stopped at:
+
+```text
+kernel page cleanup stage=prepare-children progress=256/1024
+kernel page cleanup stage=prepare-children progress=512/1024
+kernel page cleanup stage=prepare-children progress=768/1024
+```
+
+The device rebooted before `1024/1024`, page completion, or the second gate
+trigger. The first post-boot check reported about 241 seconds of uptime. No
+`SYSTEM_LAST_KMSG` DropBox entry was exposed, while the scoped phantom limit
+remained `2147483647` after reboot.
+
+This run adds one valid page-level gate miss and one invalid page interrupted
+before its gate. It does not reject the retry loop or justify changing
+KernelSnitch, reclaim, PI, pselect, timing, or offsets. Keep the same published
+artifact and repeat while the scoped phantom-process setting remains active.
+
+### 2026-08-22 — restore the NebuSec boot-ID slide flow
+
+The repeated physical P0 oracle work was a wrong branch for this port. A
+full-flow comparison against NebuSec CyberMeowfia commit
+`e8c777c29473455c4f4032775775ae3018d5f82a` confirmed that the reference
+exploit does not discover KASLR with a pipe gate, physical fingerprint scan,
+candidate offset bank, or self-target oracle. Those mechanisms were local
+experiments and must not be treated as the porting baseline.
+
+The reference `slide_leak_kernel_base()` performs this sequence on every
+attempt:
+
+1. Prepare a new `PAGE_PAYLOAD_SLIDE` kernel page.
+2. Use the rtmutex rb-tree erase write to change the writable
+   `random_table[].data` slot for `boot_id` to `nfulnl_logger`.
+3. Read `/proc/sys/kernel/random/boot_id`.
+4. Interpret the first qword as the runtime `nfulnl_logger.name` pointer and
+   subtract its image offset to recover the kernel base.
+5. After a successful slide leak, prepare `PAGE_PAYLOAD_FOPS` and enter the
+   normal main route.
+
+The T870 target now selects that flow. Removed target-only controls are:
+
+- `APP_PHYS_P0_ORACLE`
+- `APP_REQUIRE_FRESH_P0_SESSION`
+- `APP_SLIDE_FRESH_PAGE_ATTEMPTS`
+- `SLIDE_P0_OFFSET_CANDIDATES`
+- all `SLIDE_BANK_*`, `P0_ORACLE_*`, and `P0_FINGERPRINT_HEADER` settings
+
+`support/targets-v3.json` no longer publishes
+`requiresFreshP0Session: true` for this payload. Its artifact and KernelSU
+URLs remain repository-relative.
+
+The reference's `SLIDE_MAX_ATTEMPTS=20` is restored. The app copy was also
+missing the reference line
+`#define SLIDE_PSELECT_NFDS PSELECT_ROUTE_NFDS`; it is restored verbatim.
+Both trees define `PSELECT_ROUTE_NFDS=320`.
+
+Only source- and hardware-backed 4.19 differences remain enabled:
+
+- legacy `rt_mutex_waiter`, lock, task, configfs, file-operations, and page
+  layouts from the exact T870 release source/image
+- `SKB_SECOND_PAYLOAD_BIAS=0x180` for the observed 4.19 skb split
+- the one-qword result fd-set shift required by the legacy waiter layout
+- result-copy timing because the complete legacy waiter exists after
+  `do_select()` copies its result sets
+- the upstream PI requeue and mm reclaim order
+
+NDK r29 built the T870 executable, app payload, root helper, and fixed-size
+release successfully. The default `pa3q-S938NKSUACZF1` app payload also
+passed a regression build. Release verification:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-upstream-bootid
+size:   104128
+sha256: b8cf3042b70fc821323a4438ba3b216eb5bfc8cc680e9a7da4816b65c9de35a4
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
