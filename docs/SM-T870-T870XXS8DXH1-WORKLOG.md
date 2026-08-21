@@ -1561,3 +1561,38 @@ size:   104128
 sha256: b8cf3042b70fc821323a4438ba3b216eb5bfc8cc680e9a7da4816b65c9de35a4
 url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
 ```
+
+### 2026-08-22 04:35 — upstream payload did not load
+
+Do not interpret this run as an exploit or kernel failure. The device's
+`files/exploit.log` contains the complete terminal error:
+
+```text
+[app] loading verified payload=/data/user/0/dev.busung.s25uroot/files/payloads/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+[app] dlopen failed: dlopen failed: cannot locate symbol "app_publish_p0_offset" referenced by ".../cve-2026-43499-app.so"...
+```
+
+The installed file's SHA-256 was
+`b8cf3042b70fc821323a4438ba3b216eb5bfc8cc680e9a7da4816b65c9de35a4`,
+so the app loaded the intended GitHub artifact. No slide attempt, kernel-page
+preparation, rtmutex trigger, boot-ID read, or FOPS stage ran.
+
+The exact code mismatch was local app integration, not the NebuSec algorithm:
+`app_publish_p0_offset()` is defined in `preload.c` only when
+`SLIDE_P0_OFFSET_CANDIDATES` exists, but `slide_app.c` called it
+unconditionally after a slide commit. NebuSec's reference `slide.c` has no
+such supervisor publication call.
+
+The only code change gates both local publication calls with the same
+`SLIDE_P0_OFFSET_CANDIDATES` condition as their definition. No target
+offset, allocator count/order, KernelSnitch parameter, PI sequence, pselect
+timing, boot-ID operation, or exploit retry value changed.
+
+The rebuilt fixed-size release has no undefined repository-local symbol;
+its undefined dynamic symbols are Android libc imports only:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-upstream-bootid
+size:   104128
+sha256: abc8d244a63b54bee719fd187bb89f81dd8dec44083d8aae6e223fee2564f541
+```

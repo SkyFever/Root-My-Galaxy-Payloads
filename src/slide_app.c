@@ -100,7 +100,9 @@ static int slide_commit_virtual_base(uint64_t base, const char *source) {
   kaslr_base = base;
   kaslr_slide = base - KIMAGE_TEXT_BASE;
   kaslr_done = 1;
+#if defined(SLIDE_P0_OFFSET_CANDIDATES)
   app_publish_p0_offset(slide_p0_offset);
+#endif
   pr_success("slide-kaslr-ok source=%s pid=%d base=%016llx "
              "virtual_slide=%016llx p0_offset=%08zx\n",
              source, getpid(), (unsigned long long)kaslr_base,
@@ -1775,7 +1777,9 @@ static int slide_commit_stext(uint64_t stext, const char *source) {
   kaslr_slide = slide;
   slide_p0_offset = slide;
   kaslr_done = 1;
+#if defined(SLIDE_P0_OFFSET_CANDIDATES)
   app_publish_p0_offset(slide_p0_offset);
+#endif
   pr_success("slide-kaslr-ok source=%s pid=%d base=%016llx "
              "slide=%016llx\n",
              source, getpid(), (unsigned long long)kaslr_base,
