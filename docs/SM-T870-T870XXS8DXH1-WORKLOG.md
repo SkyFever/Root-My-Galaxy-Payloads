@@ -1208,3 +1208,115 @@ p0 self-target diagnostic skipping unused pipe oracle
 It should be followed directly by the payload-page preparation with
 `pipe_base=0000000000000000`; no `p0 pipe page diagnostic stage=begin` should
 precede it.
+
+### 2026-08-22 no-pipe retry8 hardware result
+
+The device loaded the published
+`gts7lwifi-T870XXS8DXH1-app-4.19-selftarget-no-pipe-retry8` artifact and
+reached the intended diagnostic path without preparing the unused pipe
+oracle:
+
+```text
+p0 self-target diagnostic skipping unused pipe oracle
+```
+
+All eight fresh `PAGE_PAYLOAD_SLIDE` preparations completed the exact
+upstream mm reclaim order, the result-copy trigger, and the full reclaim
+socket readback. Every attempt returned `mutation=0`. All eight independent
+KernelSnitch results reported `object_index=16`, although their leaked slab
+bases differed. The common terminal checkpoints were:
+
+```text
+mm late cpu-partial drain triggers=0
+sk_buff reclaim sends=16/16 mode=1 stop_errno=0
+slide cmp_requeue_pi ret=-1 errno=35 polls=1
+slide wait_requeue_pi ret=-1 errno=110
+slide result-copy trigger sentinel_cleared=1 seen_after_return=0 syscall_returned=1
+p0 physical write status=0 ok=1
+sk_buff self-target readback total=1048576/1048576 sends=16 changed=0 errno=0
+p0 result-copy self-target mutation=0
+```
+
+This is a valid bounded negative result. Do not increase the page retry count
+or change PI timing from it. It still does not distinguish failure to return
+the leaked mm slab to the buddy allocator from an rt_mutex chain exit before
+the self-target write.
+
+### Live mm_struct slab geometry and next observation boundary
+
+The connected stock device permits ADB shell to read `/proc/slabinfo` even
+though both the untrusted app and ADB shell are denied the corresponding
+`/sys/kernel/slab/mm_struct/*` attributes. The live cache row is:
+
+```text
+mm_struct 657 768 1024 32 8 : tunables 0 0 0 : slabdata 24 24 0
+```
+
+This proves on the running `T870XXS8DXH1` kernel that `mm_struct` has a
+1024-byte object size, 32 objects per slab, and eight 4 KiB pages per slab.
+The exact stored `boot.img` command line has no `slub_min_order`,
+`slub_max_order`, or `slub_min_objects` override. With `CONFIG_NR_CPUS=8`,
+the stock `mm/slub.c::calculate_order()` therefore agrees with the live row:
+`MM_ORDER=3` is correct. The repeated `object_index=16` is not evidence for
+an order-2 slab and must not be used to change `MM_ORDER`.
+
+The next test should keep the published payload unchanged and sample the live
+`mm_struct` slab row externally through ADB while one app run executes. A
+decrease in total `mm_struct` slabs at the release boundary would directly
+confirm the first-stage SLUB discard; no decrease would locate the failure in
+the mm reclaim topology. This observation should precede any new allocator,
+skb, or rt_mutex code change.
+
+### External slab observation: target SLUB discard succeeds
+
+ADB sampled the live `mm_struct` row while the unchanged no-pipe retry8
+artifact executed. Each observed fresh-page preparation reached 55 total
+slabs, then first dropped by exactly one slab before the bulk prepare-context
+cleanup:
+
+```text
+1760 1760 1024 32 8 : slabdata 55 55 0
+1707 1728 1024 32 8 : slabdata 54 54 0
+1514 1536 1024 32 8 : slabdata 48 48 0
+1306 1344 1024 32 8 : slabdata 42 42 0
+1082 1120 1024 32 8 : slabdata 35 35 0
+ 858  896 1024 32 8 : slabdata 28 28 0
+ 656  768 1024 32 8 : slabdata 24 24 0
+```
+
+In the exact upstream release order, the pre, post, and six spray closes make
+partial slabs; only closing `memfd_leak` makes the target slab empty. The
+single 55-to-54 total-slab transition therefore confirms that the leaked
+target slab is discarded from the mm cache before the later prepare cleanup.
+Do not change `MM_ORDER`, `MM_PARTIALS`, or the upstream reclaim order from
+this result. The remaining boundary is buddy-to-order-3-skb reuse or the
+subsequent rt_mutex chain.
+
+### Exact 4.19 fake-owner exit and full-FOPS gate candidate
+
+The T870 profile inherited `SLIDE_LOCK_OWNER_VALUE=1` in its initial target
+commit. In the exact Samsung 4.19 source, `rt_mutex_owner(lock)` masks bit
+zero, so that value is a NULL owner with the waiter flag set. After step 7
+requeues the stale waiter's lock-tree node,
+`rt_mutex_adjust_prio_chain()` reaches its step 9 owner check and returns.
+It cannot execute step 11's `rt_mutex_dequeue_pi()`, where the payload's
+crafted `pi_tree_entry` and physical-write operands are consumed.
+
+The repository already has a full-FOPS geometry for this owner chain. The
+T870 gate now reuses that existing construction: `owner=fake_task|1`,
+`waiter.task=init_task`, `fake_task.sched_task_group=root_task_group`, an
+empty fake-task PI root, and `pi_top_task=init_task`. No allocator, skb,
+KernelSnitch, pselect, result-copy, offset, or timing value changes. Because
+this is the first T870 run that can enter the deeper owner path, the diagnostic
+is limited to one fresh page.
+
+The T870 release and the default `pa3q-S938NKSUACZF1` regression release
+both build with NDK r29. The support feed remains repository-relative and its
+T870 size remains 104128 bytes:
+
+```text
+label:  gts7lwifi-T870XXS8DXH1-app-4.19-selftarget-full-fops-owner
+size:   104128
+sha256: f349eb7e5f25c71dd8eab4dc470648eb567441fb2ab263c79f2e289bb99a90c5
+url:    artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so
+```
