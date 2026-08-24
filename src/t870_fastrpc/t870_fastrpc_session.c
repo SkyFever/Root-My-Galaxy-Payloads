@@ -8,7 +8,6 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <pthread.h>
-#include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -212,8 +211,6 @@ static void *invoke_thread(void *opaque)
 {
     struct invoke_job *job = opaque;
 
-    printf("[*] FastRPC invoke thread scalar=0x%08" PRIx32 " cpu=%d\n",
-           job->scalar, sched_getcpu());
     errno = 0;
     job->result = job->invoke(job->handle, job->scalar, &job->argument);
     job->invoke_errno = errno;

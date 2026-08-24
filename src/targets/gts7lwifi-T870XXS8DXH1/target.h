@@ -3,7 +3,7 @@
 
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 #define BUILD_VARIANT_LABEL \
-  "gts7lwifi-T870XXS8DXH1-app-tracefs-fastrpc-cpu-local"
+  "gts7lwifi-T870XXS8DXH1-app-tracefs-fastrpc-sphal-namespace"
 #define APP_RETAIN_KERNEL_PAGE_PREP_RESOURCES 1
 #else
 #define BUILD_VARIANT_LABEL "gts7lwifi-T870XXS8DXH1-root-umh"
