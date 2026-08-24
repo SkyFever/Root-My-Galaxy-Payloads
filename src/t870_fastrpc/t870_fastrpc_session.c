@@ -2,6 +2,7 @@
 
 #include "t870_fastrpc_session.h"
 
+#include <android/dlext.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -126,6 +127,60 @@ static void *required_symbol(void *library, const char *name)
     if (error != NULL)
         fprintf(stderr, "[-] dlsym(%s): %s\n", name, error);
     return error == NULL ? symbol : NULL;
+}
+
+typedef struct android_namespace_t *
+    (*get_exported_namespace_fn)(const char *name);
+
+static void *open_fastrpc_library(const char *library_path)
+{
+    char default_error[256] = {0};
+    void *namespace_api;
+    get_exported_namespace_fn get_exported_namespace;
+    struct android_namespace_t *sphal_namespace;
+    android_dlextinfo extension = {0};
+    void *library;
+    const char *error;
+
+    library = dlopen(library_path, RTLD_NOW | RTLD_LOCAL);
+    if (library != NULL)
+        return library;
+    error = dlerror();
+    if (error != NULL)
+        (void)snprintf(default_error, sizeof(default_error), "%s", error);
+
+    namespace_api = dlopen("libdl_android.so", RTLD_NOW | RTLD_LOCAL);
+    if (namespace_api == NULL) {
+        fprintf(stderr, "[-] default dlopen: %s\n",
+                default_error[0] != '\0' ? default_error : "unknown error");
+        fprintf(stderr, "[-] libdl_android dlopen: %s\n", dlerror());
+        return NULL;
+    }
+    get_exported_namespace = (get_exported_namespace_fn)
+        required_symbol(namespace_api, "android_get_exported_namespace");
+    if (get_exported_namespace == NULL) {
+        dlclose(namespace_api);
+        return NULL;
+    }
+    sphal_namespace = get_exported_namespace("sphal");
+    if (sphal_namespace == NULL) {
+        fputs("[-] exported sphal namespace unavailable\n", stderr);
+        dlclose(namespace_api);
+        return NULL;
+    }
+    extension.flags = ANDROID_DLEXT_USE_NAMESPACE;
+    extension.library_namespace = sphal_namespace;
+    library = android_dlopen_ext(library_path, RTLD_NOW | RTLD_LOCAL,
+                                 &extension);
+    if (library == NULL) {
+        fprintf(stderr, "[-] default dlopen: %s\n",
+                default_error[0] != '\0' ? default_error : "unknown error");
+        fprintf(stderr, "[-] sphal android_dlopen_ext: %s\n", dlerror());
+    } else {
+        printf("[+] FastRPC library loaded through sphal namespace\n");
+    }
+    dlclose(namespace_api);
+    return library;
 }
 
 static int allocate_ion_buffer(size_t size)
@@ -259,11 +314,9 @@ t870_fastrpc_session_open(const char *dsp_library_directory)
         goto fail;
     }
     printf("[*] uid=%d library=%s\n", getuid(), library_path);
-    session->library = dlopen(library_path, RTLD_NOW | RTLD_LOCAL);
-    if (session->library == NULL) {
-        fprintf(stderr, "[-] dlopen: %s\n", dlerror());
+    session->library = open_fastrpc_library(library_path);
+    if (session->library == NULL)
         goto fail;
-    }
     session->session_control = (session_control_fn)
         required_symbol(session->library, "remote_session_control");
     session->handle_open = (handle_open_fn)
