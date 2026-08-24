@@ -22,6 +22,7 @@ struct t870_bridge_hooks {
 struct t870_bridge_context {
     struct t870_bridge_inputs inputs;
     struct t870_bridge_hooks hooks;
+    int heap_rw_checkpoint;
 };
 
 /* Intended as the worker passed to t870_spawn_detached_owner(). */

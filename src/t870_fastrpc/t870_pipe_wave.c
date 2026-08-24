@@ -87,6 +87,33 @@ unsigned int t870_pipe_wave_populate(struct t870_pipe_wave *wave,
     return submitted;
 }
 
+unsigned int t870_pipe_wave_drain_prefix(struct t870_pipe_wave *wave,
+                                         unsigned int buffer_count)
+{
+    static unsigned char page[T870_PIPE_WAVE_PAGE_SIZE];
+    unsigned int i;
+    unsigned int drained = 0;
+
+    if (wave == NULL || buffer_count == 0U || buffer_count > 3U)
+        return 0;
+    for (i = 0; i < T870_PIPE_WAVE_COUNT; ++i) {
+        unsigned int buffer;
+        int complete = 1;
+
+        for (buffer = 0; buffer < buffer_count; ++buffer) {
+            ssize_t got = read(wave->fds[i][0], page, sizeof(page));
+
+            if (got != (ssize_t)sizeof(page)) {
+                complete = 0;
+                break;
+            }
+        }
+        if (complete)
+            ++drained;
+    }
+    return drained;
+}
+
 unsigned int t870_pipe_wave_write_all(struct t870_pipe_wave *wave,
                                       const void *data, size_t size)
 {
@@ -141,6 +168,43 @@ int t870_pipe_wave_find_zero_length(struct t870_pipe_wave *wave,
     return matches;
 }
 
+int t870_pipe_wave_find_zero_length_after_drain(
+    struct t870_pipe_wave *wave, unsigned int *index_out)
+{
+    const int normal_bytes = (int)T870_PIPE_WAVE_PAGE_SIZE;
+    unsigned int found = 0;
+    unsigned int i;
+    int matches = 0;
+
+    if (wave == NULL || index_out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    for (i = 0; i < T870_PIPE_WAVE_COUNT; ++i) {
+        int readable = -1;
+
+        if (ioctl(wave->fds[i][0], FIONREAD, &readable) != 0) {
+            fprintf(stderr, "[-] pipe FIONREAD index=%u: %s\n", i,
+                    strerror(errno));
+            return -1;
+        }
+        if (readable == 0) {
+            found = i;
+            ++matches;
+            continue;
+        }
+        if (readable != normal_bytes) {
+            fprintf(stderr, "[-] pipe FIONREAD unexpected index=%u "
+                    "bytes=%d expected=%d\n", i, readable, normal_bytes);
+            errno = EUCLEAN;
+            return -1;
+        }
+    }
+    if (matches == 1)
+        *index_out = found;
+    return matches;
+}
+
 int t870_pipe_wave_write_one(struct t870_pipe_wave *wave,
                              unsigned int index,
                              const void *data, size_t size)
@@ -156,6 +220,27 @@ int t870_pipe_wave_write_one(struct t870_pipe_wave *wave,
     if (written < 0)
         return -1;
     if (written != (ssize_t)size) {
+        errno = EIO;
+        return -1;
+    }
+    return 0;
+}
+
+int t870_pipe_wave_read_one(struct t870_pipe_wave *wave,
+                            unsigned int index,
+                            void *data, size_t size)
+{
+    ssize_t got;
+
+    if (wave == NULL || index >= T870_PIPE_WAVE_COUNT || data == NULL ||
+        size == 0U || size >= T870_PIPE_WAVE_PAGE_SIZE) {
+        errno = EINVAL;
+        return -1;
+    }
+    got = read(wave->fds[index][0], data, size);
+    if (got < 0)
+        return -1;
+    if (got != (ssize_t)size) {
         errno = EIO;
         return -1;
     }

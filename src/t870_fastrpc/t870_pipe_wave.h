@@ -14,13 +14,20 @@ struct t870_pipe_wave {
 int t870_pipe_wave_prepare(struct t870_pipe_wave *wave, int packetized);
 unsigned int t870_pipe_wave_populate(struct t870_pipe_wave *wave,
                                      unsigned int buffer_count);
+unsigned int t870_pipe_wave_drain_prefix(struct t870_pipe_wave *wave,
+                                         unsigned int buffer_count);
 unsigned int t870_pipe_wave_write_all(struct t870_pipe_wave *wave,
                                       const void *data, size_t size);
 int t870_pipe_wave_find_zero_length(struct t870_pipe_wave *wave,
                                     unsigned int *index_out);
+int t870_pipe_wave_find_zero_length_after_drain(
+    struct t870_pipe_wave *wave, unsigned int *index_out);
 int t870_pipe_wave_write_one(struct t870_pipe_wave *wave,
                              unsigned int index,
                              const void *data, size_t size);
+int t870_pipe_wave_read_one(struct t870_pipe_wave *wave,
+                            unsigned int index,
+                            void *data, size_t size);
 unsigned int t870_pipe_wave_probe_packet_decrement(
     struct t870_pipe_wave *wave);
 void t870_pipe_wave_release(struct t870_pipe_wave *wave);

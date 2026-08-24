@@ -3,9 +3,11 @@
 
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 #define BUILD_VARIANT_LABEL \
-  "gts7lwifi-T870XXS8DXH1-app-fastrpc-ordered-first-phase-a"
+  "gts7lwifi-T870XXS8DXH1-app-fastrpc-heap-rw-checkpoint"
 #define APP_RETAIN_KERNEL_PAGE_PREP_RESOURCES 1
 #define APP_T870_PHASE_A_WRITE_CHECKPOINT 1
+#define APP_T870_PHASE_A_HEAP_RW_CHECKPOINT 1
+#define APP_T870_HEAP_RW_TARGET_OFF 0x7000
 #else
 #define BUILD_VARIANT_LABEL "gts7lwifi-T870XXS8DXH1-root-umh"
 #endif

@@ -72,7 +72,8 @@ int t870_fastrpc_bridge_adapter_worker(void *opaque)
     if (configuration == NULL ||
         configuration->dsp_library_directory == NULL ||
         configuration->dsp_library_directory[0] == '\0' ||
-        configuration->verify_original_route == NULL) {
+        (!configuration->heap_rw_checkpoint &&
+         configuration->verify_original_route == NULL)) {
         return EINVAL;
     }
     state.configuration = configuration;
@@ -87,6 +88,7 @@ int t870_fastrpc_bridge_adapter_worker(void *opaque)
     bridge.hooks.verify_original_route = verify_original_route;
     bridge.hooks.mark_nonretryable = mark_nonretryable;
     bridge.hooks.opaque = &state;
+    bridge.heap_rw_checkpoint = configuration->heap_rw_checkpoint;
     result = t870_bridge_worker(&bridge);
 
     if (result == 0 || result == T870_OWNER_DIRTY_FAILURE ||
