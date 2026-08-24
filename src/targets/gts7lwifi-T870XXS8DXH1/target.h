@@ -3,9 +3,8 @@
 
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 #define BUILD_VARIANT_LABEL \
-  "gts7lwifi-T870XXS8DXH1-app-physical-p0-retain-page-prep"
+  "gts7lwifi-T870XXS8DXH1-app-physical-p0-result-copy-sync"
 #define APP_PHYS_P0_ORACLE 1
-#define APP_RETAIN_KERNEL_PAGE_PREP_RESOURCES 1
 #else
 #define BUILD_VARIANT_LABEL "gts7lwifi-T870XXS8DXH1-root-umh"
 #endif

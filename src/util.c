@@ -1413,8 +1413,6 @@ uintptr_t prepare_kernel_page(int payload_mode) {
   pr_info("sk_buff reclaim sends=%d/%d mode=%d\n",
           reclaim_sent, reclaim_sends, payload_mode);
 #endif
-#if !defined(APP_RETAIN_KERNEL_PAGE_PREP_RESOURCES) || \
-    !APP_RETAIN_KERNEL_PAGE_PREP_RESOURCES
 #if defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && APP_PHYS_VIRTUAL_BASE_ORACLE
   pr_info("kernel page cleanup stage=kernelsnitch begin mode=%d base=%016zx\n",
           payload_mode, base);
@@ -1448,7 +1446,6 @@ uintptr_t prepare_kernel_page(int payload_mode) {
 #if defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && APP_PHYS_VIRTUAL_BASE_ORACLE
   pr_info("kernel page cleanup stage=prepare-children done base=%016zx\n",
           base);
-#endif
 #endif
 
   return base;
