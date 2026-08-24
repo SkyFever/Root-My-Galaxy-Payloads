@@ -3,7 +3,7 @@
 
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 #define BUILD_VARIANT_LABEL \
-  "gts7lwifi-T870XXS8DXH1-app-tracefs-fastrpc-p0-align4k"
+  "gts7lwifi-T870XXS8DXH1-app-tracefs-fastrpc-skb-contract"
 #define APP_RETAIN_KERNEL_PAGE_PREP_RESOURCES 1
 #else
 #define BUILD_VARIANT_LABEL "gts7lwifi-T870XXS8DXH1-root-umh"

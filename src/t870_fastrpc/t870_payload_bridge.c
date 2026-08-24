@@ -29,15 +29,18 @@ int t870_run_payload_bridge(void)
 {
     struct t870_fastrpc_bridge_adapter adapter = {0};
     uintptr_t misc_fops_direct = data_addr(ASHMEM_MISC_FOPS);
+    uintptr_t payload_base = page_base + SKB_DATA_DELTA;
     char dsp_directory[PATH_MAX] = {0};
     pid_t owner_pid = -1;
     int result;
 
-    if (!is_direct_ptr(page_base) || !is_direct_ptr(misc_fops_direct) ||
-        fake_fops != page_base + FOPS_TABLE_OFF) {
+    if (!is_direct_ptr(page_base) || !is_direct_ptr(payload_base) ||
+        !is_direct_ptr(misc_fops_direct) ||
+        fake_fops != payload_base + FOPS_TABLE_OFF) {
         pr_error("t870 bridge original runtime contract failed "
-                 "page=%016zx fake_fops=%016zx misc=%016zx\n",
-                 page_base, fake_fops, misc_fops_direct);
+                 "page=%016zx payload=%016zx fake_fops=%016zx "
+                 "misc=%016zx\n",
+                 page_base, payload_base, fake_fops, misc_fops_direct);
         return EINVAL;
     }
     if (t870_prepare_dsp_asset(dsp_directory,

