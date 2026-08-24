@@ -333,7 +333,8 @@ int try_cfi_stage(void) {
     goto fail;
   }
 
-#if !defined(APP_PHYS_P0_ORACLE) || !APP_PHYS_P0_ORACLE
+#if (!defined(APP_PHYS_P0_ORACLE) || !APP_PHYS_P0_ORACLE) && \
+    (!defined(T870_FASTRPC_BRIDGE) || !T870_FASTRPC_BRIDGE)
   if (!restore_slide_boot_id(fd)) {
     cfi_last_step = 10;
     cfi_last_errno = errno;

