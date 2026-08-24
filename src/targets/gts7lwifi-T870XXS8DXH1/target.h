@@ -5,6 +5,7 @@
 #define BUILD_VARIANT_LABEL \
   "gts7lwifi-T870XXS8DXH1-app-tracefs-fastrpc-sphal-namespace"
 #define APP_RETAIN_KERNEL_PAGE_PREP_RESOURCES 1
+#define APP_T870_PHASE_A_WRITE_CHECKPOINT 1
 #else
 #define BUILD_VARIANT_LABEL "gts7lwifi-T870XXS8DXH1-root-umh"
 #endif

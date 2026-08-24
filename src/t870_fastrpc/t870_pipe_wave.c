@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 void t870_pipe_wave_release(struct t870_pipe_wave *wave)
@@ -101,6 +102,64 @@ unsigned int t870_pipe_wave_write_all(struct t870_pipe_wave *wave,
             ++written_count;
     }
     return written_count;
+}
+
+int t870_pipe_wave_find_zero_length(struct t870_pipe_wave *wave,
+                                    unsigned int *index_out)
+{
+    const int normal_bytes = 3 * (int)T870_PIPE_WAVE_PAGE_SIZE;
+    unsigned int found = 0;
+    unsigned int i;
+    int matches = 0;
+
+    if (wave == NULL || index_out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    for (i = 0; i < T870_PIPE_WAVE_COUNT; ++i) {
+        int readable = -1;
+
+        if (ioctl(wave->fds[i][0], FIONREAD, &readable) != 0) {
+            fprintf(stderr, "[-] pipe FIONREAD index=%u: %s\n", i,
+                    strerror(errno));
+            return -1;
+        }
+        if (readable == 0) {
+            found = i;
+            ++matches;
+            continue;
+        }
+        if (readable != normal_bytes) {
+            fprintf(stderr, "[-] pipe FIONREAD unexpected index=%u "
+                    "bytes=%d expected=%d\n", i, readable, normal_bytes);
+            errno = EUCLEAN;
+            return -1;
+        }
+    }
+    if (matches == 1)
+        *index_out = found;
+    return matches;
+}
+
+int t870_pipe_wave_write_one(struct t870_pipe_wave *wave,
+                             unsigned int index,
+                             const void *data, size_t size)
+{
+    ssize_t written;
+
+    if (wave == NULL || index >= T870_PIPE_WAVE_COUNT || data == NULL ||
+        size == 0U || size >= T870_PIPE_WAVE_PAGE_SIZE) {
+        errno = EINVAL;
+        return -1;
+    }
+    written = write(wave->fds[index][1], data, size);
+    if (written < 0)
+        return -1;
+    if (written != (ssize_t)size) {
+        errno = EIO;
+        return -1;
+    }
+    return 0;
 }
 
 unsigned int t870_pipe_wave_probe_packet_decrement(
