@@ -14,6 +14,8 @@
 
 #define T870_APP_FILES_PREFIX \
     "/data/user/0/dev.busung.s25uroot/files/"
+#define T870_SHELL_PAYLOAD_PATH "/data/local/tmp/ksu-payload"
+#define T870_SHELL_TMP_PARENT "/data/local/tmp"
 #define T870_DSP_FILENAME "libt870_map_collision_skel.so"
 
 extern const unsigned char t870_dsp_blob_start[];
@@ -37,6 +39,7 @@ static int write_full(int fd, const unsigned char *data, size_t size)
 int t870_prepare_dsp_asset(char *directory, size_t directory_size)
 {
     Dl_info information;
+    const char *parent_path;
     const char *slash;
     char library_path[PATH_MAX] = {0};
     size_t parent_length;
@@ -54,20 +57,26 @@ int t870_prepare_dsp_asset(char *directory, size_t directory_size)
         return -1;
     }
     if (strncmp(information.dli_fname, T870_APP_FILES_PREFIX,
-                sizeof(T870_APP_FILES_PREFIX) - 1U) != 0) {
-        fprintf(stderr, "[-] refusing DSP extraction outside app files: "
+                sizeof(T870_APP_FILES_PREFIX) - 1U) == 0) {
+        parent_path = information.dli_fname;
+        slash = strrchr(parent_path, '/');
+        if (slash == NULL) {
+            errno = EINVAL;
+            return -1;
+        }
+        parent_length = (size_t)(slash - parent_path);
+    } else if (strcmp(information.dli_fname,
+                      T870_SHELL_PAYLOAD_PATH) == 0) {
+        parent_path = T870_SHELL_TMP_PARENT;
+        parent_length = sizeof(T870_SHELL_TMP_PARENT) - 1U;
+    } else {
+        fprintf(stderr, "[-] refusing DSP extraction from unapproved path: "
                 "%s\n", information.dli_fname);
         errno = EPERM;
         return -1;
     }
-    slash = strrchr(information.dli_fname, '/');
-    if (slash == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    parent_length = (size_t)(slash - information.dli_fname);
     if (snprintf(directory, directory_size, "%.*s/t870-dsp-%d",
-                 (int)parent_length, information.dli_fname,
+                 (int)parent_length, parent_path,
                  getpid()) >= (int)directory_size) {
         errno = ENAMETOOLONG;
         return -1;
