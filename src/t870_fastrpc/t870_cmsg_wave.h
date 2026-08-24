@@ -36,6 +36,8 @@ int t870_cmsg_wave_prepare(
     const unsigned char control_template[T870_CMSG_CONTROL_SIZE],
     const char *wave_label);
 unsigned int t870_cmsg_wave_start(struct t870_cmsg_wave *wave);
+unsigned int t870_cmsg_wave_start_count(struct t870_cmsg_wave *wave,
+                                        unsigned int sender_count);
 void t870_cmsg_wave_release(struct t870_cmsg_wave *wave);
 
 #endif

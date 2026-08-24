@@ -192,13 +192,19 @@ fail:
     return -1;
 }
 
-unsigned int t870_cmsg_wave_start(struct t870_cmsg_wave *wave)
+unsigned int t870_cmsg_wave_start_count(struct t870_cmsg_wave *wave,
+                                        unsigned int sender_count)
 {
     unsigned int attempt;
     unsigned int entered = 0;
     unsigned int i;
 
-    for (i = 0; i < T870_CMSG_WAVE_SENDERS; ++i) {
+    if (wave == NULL || sender_count == 0U ||
+        sender_count > T870_CMSG_WAVE_SENDERS || wave->started != 0U) {
+        errno = EINVAL;
+        return 0;
+    }
+    for (i = 0; i < sender_count; ++i) {
         if (pthread_create(&wave->jobs[i].thread, NULL,
                            cmsg_wave_thread, &wave->jobs[i]) != 0) {
             fprintf(stderr, "[-] cmsg sender thread %u creation failed\n", i);
@@ -206,7 +212,7 @@ unsigned int t870_cmsg_wave_start(struct t870_cmsg_wave *wave)
         }
         wave->started = i + 1U;
     }
-    if (wave->started != T870_CMSG_WAVE_SENDERS)
+    if (wave->started != sender_count)
         return 0;
 
     for (attempt = 0; attempt < 500U; ++attempt) {
@@ -233,4 +239,9 @@ unsigned int t870_cmsg_wave_start(struct t870_cmsg_wave *wave)
         }
     }
     return entered;
+}
+
+unsigned int t870_cmsg_wave_start(struct t870_cmsg_wave *wave)
+{
+    return t870_cmsg_wave_start_count(wave, T870_CMSG_WAVE_SENDERS);
 }
