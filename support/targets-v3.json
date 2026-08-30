@@ -191,6 +191,20 @@
         "url": "kernelsu/ksud-gts7lwifi-T870XXS8DXH1-kdp",
         "size": 4731432
       }
+    },
+    {
+      "payloadId": "b5q-F731NKSS5EYGB",
+      "displayName": "Galaxy Z Flip5 | Kernel 5.15.153 | tracefs/MCAST route",
+      "models": ["SM-F731N"],
+      "kernelVersions": ["5.15.153"],
+      "exploit": {
+        "url": "artifacts/b5q-F731NKSS5EYGB/cve-2026-43499-app.so",
+        "size": 104128
+      },
+      "kernelsu": {
+        "url": "kernelsu/ksud-b5q-F731NKSS5EYGB-kdp",
+        "size": 4873216
+      }
     }
   ]
 }
