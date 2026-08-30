@@ -382,3 +382,20 @@ preload supervisor ... p0_timeout=45 timeout=300
 
 The resulting release remains 104128 bytes with SHA-256
 `1186e11ce51491c7c027620bc7ef14ad059ccc9e850fae3cc77a02b3b3e2ea39`.
+
+### Inherited forced-slide result
+
+The next app run completed controlled-mm at 32/32 and the MCAST writer reported
+a successful physical write, but CFI verification failed before configfs access.
+The inherited `SLIDE_P0_OFFSET=0x110000` selected source `forced`, which the
+original code maps to `data_mode=physical-alias`; the resulting misc-fops target
+was `0xffffff8002c51b88` and read back zero. The earlier tracefs run with the
+same slide selected canonical mode and passed CFI read/write.
+
+Do not globally reinterpret forced P0 offsets as canonical because a genuine P0
+fallback retry requires the physical alias. The F731N supervisor now clears only
+an inherited offset and its gate/probe metadata once before the first child, so
+tracefs revalidates the current boot. A P0 value published by that first child
+can still be retained by the unchanged supervisor retry path. The release is
+104128 bytes with SHA-256
+`c5a339ad26d742c6b7fce28d5086c6d1b0bd70ed8df6749b20e339b1e532ca48`.
