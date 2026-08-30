@@ -326,3 +326,33 @@ sha256: 3111eacfa669b9504faa8166f6929981a7fc066533b680795adc97b1518ed1a2
 
 The runtime-reported table base is the only acceptable basis for updating
 `KMALLOC_CACHES_OFF`; the nearby dm1q value is not copied speculatively.
+
+### KSS runtime result
+
+The first app run of the diagnostic payload failed before reaching the cache
+gate: its 120-second native-attempt budget expired while collecting a complete
+32-object controlled-mm group, and the next attempt returned zero measured
+collisions. The user had already cleared the app payload cache; cache reuse was
+not the cause of that failure.
+
+The same published payload was then run through the app's existing
+`--run-payload` helper entry point with one 300-second native attempt. No
+exploit constants or reclaim logic were changed. The original path reached a
+complete group at scan attempt 53, passed the MCAST and configfs checkpoints,
+and inspected 12 fresh pipe allocations fail-closed. Eleven allocations
+reported the same slab cache pointer and the bounded diagnostic consistently
+reported this table:
+
+```text
+kmalloc cache diag table base=ffffffc00a117590 image_off=01f77590
+normal1k=ffffff80011d2780 normal2k=ffffff80011d2900
+cgroup1k=ffffff80011d2780 cgroup2k=ffffff80011d2900
+```
+
+The observed 2 KiB cache `0xffffff80011d2900` matched the pipe page slab
+pointer. The compiled donor table was exactly `0x380` bytes too high. Therefore
+the F731N KSS profile now uses the measured
+`KMALLOC_CACHES_OFF=0x01f77590`; the temporary runtime scan flag is disabled
+again and the normal app build label is restored. This result only validates
+the cache-table offset and the preceding primitive checkpoints. Root and
+KernelSU remain unconfirmed until a rebuilt payload passes the subsequent
