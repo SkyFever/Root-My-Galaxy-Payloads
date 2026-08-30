@@ -356,3 +356,29 @@ the F731N KSS profile now uses the measured
 again and the normal app build label is restored. This result only validates
 the cache-table offset and the preceding primitive checkpoints. Root and
 KernelSU remain unconfirmed until a rebuilt payload passes the subsequent
+original-repository stages on hardware.
+
+## App-path timeout cutoff (2026-08-31)
+
+The corrected-offset payload loaded with the production label, but the app run
+never reached MCAST, configfs, the pipe cache gate, root, or KernelSU. KASLR
+resolution succeeded on each visible native attempt. The controlled-mm search
+reached at most 16 of 32 slots before the app-supplied 120-second native timeout
+terminated each child. After eight such attempts, the app's 15-minute overall
+limit ended the run.
+
+This failure therefore does not validate or reject
+`KMALLOC_CACHES_OFF=0x01f77590`; it occurs earlier. Collision thresholds,
+KernelSnitch sampling, spray counts, reclaim ordering, and writer timing remain
+unchanged. The supervisor now supports an optional target minimum for its
+existing native-attempt timeout, and only the F731N app profile declares a
+300-second minimum. When the app requests 120 seconds, the payload logs the
+clamp and runs the original search with a 300-second child budget.
+
+```text
+exploit attempt timeout clamp requested=120 minimum=300
+preload supervisor ... p0_timeout=45 timeout=300
+```
+
+The resulting release remains 104128 bytes with SHA-256
+`1186e11ce51491c7c027620bc7ef14ad059ccc9e850fae3cc77a02b3b3e2ea39`.

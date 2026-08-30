@@ -132,6 +132,14 @@ __attribute__((constructor)) static void load(void) {
       "PSELECT_DELAY_USEC", DEFAULT_PSELECT_DELAY_USEC, 0, 1000000);
   int attempt_timeout_sec = env_int(
       "EXPLOIT_ATTEMPT_TIMEOUT_SEC", DEFAULT_ATTEMPT_TIMEOUT_SEC, 5, 900);
+#if defined(APP_PAYLOAD) && APP_PAYLOAD && \
+    defined(APP_MIN_EXPLOIT_ATTEMPT_TIMEOUT_SEC)
+  if (attempt_timeout_sec < APP_MIN_EXPLOIT_ATTEMPT_TIMEOUT_SEC) {
+    pr_info("exploit attempt timeout clamp requested=%d minimum=%d\n",
+            attempt_timeout_sec, APP_MIN_EXPLOIT_ATTEMPT_TIMEOUT_SEC);
+    attempt_timeout_sec = APP_MIN_EXPLOIT_ATTEMPT_TIMEOUT_SEC;
+  }
+#endif
   int p0_attempt_timeout_sec = env_int(
       "P0_ATTEMPT_TIMEOUT_SEC", DEFAULT_P0_ATTEMPT_TIMEOUT_SEC, 5,
       attempt_timeout_sec);
