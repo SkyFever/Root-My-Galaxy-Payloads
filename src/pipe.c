@@ -735,6 +735,17 @@ int install_pipe_physrw(int fd) {
   pr_info("phys step pipe probe found=%d pipebuf=%016zx idx=%d scan=%d/%d/%d\n",
           found, pipebuf_addr, pipebuf_pipe_idx, pipe_scan_vmemmap,
           pipe_scan_ops, pipe_scan_len);
+  if (!found && pipe_scan_first_page) {
+    pr_info("phys pipe first page=%016llx ops=%016llx want=%016zx "
+            "len=%u flags=%08x q=%016llx/%016llx/%016llx/%016llx\n",
+            (unsigned long long)pipe_scan_first_page,
+            (unsigned long long)pipe_scan_first_ops, pipe_buf_ops_addr(),
+            pipe_scan_first_len, pipe_scan_first_flags,
+            (unsigned long long)pipe_scan_q0,
+            (unsigned long long)pipe_scan_q1,
+            (unsigned long long)pipe_scan_q2,
+            (unsigned long long)pipe_scan_q3);
+  }
   if (!found) {
     return 0;
   }
