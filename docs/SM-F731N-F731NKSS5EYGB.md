@@ -269,3 +269,60 @@ Before the first connected-device run:
 
 No boot, vbmeta, or persistent partition write is authorized by this candidate
 flow. Resident-agent work remains out of scope until the runtime gate passes.
+
+## First KSS runtime result
+
+The 2026-08-30 official app run selected the exact F731N profile and executed
+the published 104128-byte payload through Shizuku's shell context. It did not
+use the stale untrusted-app/pselect payload left in `files/exploit.log`.
+
+The intended upstream route passed these runtime gates:
+
+```text
+[+] build config ... b5q-F731NKSS5EYGB-tracefs-mcast-configfs-pipe-root
+[+] slide-kaslr-ok source=tracefs ... slide=0000000000038000
+[*] slide mcast returned ... offset=0x78 ... calls=1 sched_ok=1
+[*] p0 physical write status=0 ok=1
+[*] cfi write ret=35 errno=0
+[*] cfi read ret=35 errno=0
+[*] cfi starting pipe physrw
+```
+
+It then failed at the original pipe cache gate:
+
+```text
+[*] pipe caches normal1k=ff537c18ff537858 normal2k=00000000009f2a80
+    cgroup1k=fe1cf6b4fe1cf520 cgroup2k=0000000000a0ed60
+    selected=0000000000a0ed60
+[*] pipe page ... cache18=ffffff80011d2900 ... match=0
+[*] phys step cache gate failed slab=ffffff80011d2900
+    want=0000000000a0ed60
+```
+
+The real slab pointer was stable on two independently reclaimed pipe pages.
+The values read from the donor `KMALLOC_CACHES_OFF=0x01f77910` were not
+canonical cache pointers. This matches the repository's documented
+wrong-`kmalloc_caches` failure signature, but it does not by itself prove a
+particular replacement offset for the KSS edition.
+
+No crash, panic, or reboot occurred. Boot ID
+`e016f13c-0734-42b9-a34a-e8d58126aa12` remained unchanged and the stock
+green/locked/verity-enforcing/SELinux-Enforcing state was preserved.
+
+## KSS kmalloc offset diagnostic
+
+The next payload adds an F731N-only, read-only cache-table diagnostic. After
+the ordinary gate rejects a nonmatching pointer, it reads
+`data_addr(KMALLOC_CACHES) ± 0x800`, logs every occurrence of the observed
+pipe slab pointer, and reports a table base only when the normal/accounted
+2 KiB slot geometry is present. It still returns failure and does not bypass
+the gate, grant root, or attempt KernelSU.
+
+```text
+label: b5q-F731NKSS5EYGB-kmalloc-scan
+size: 104128
+sha256: 3111eacfa669b9504faa8166f6929981a7fc066533b680795adc97b1518ed1a2
+```
+
+The runtime-reported table base is the only acceptable basis for updating
+`KMALLOC_CACHES_OFF`; the nearby dm1q value is not copied speculatively.
