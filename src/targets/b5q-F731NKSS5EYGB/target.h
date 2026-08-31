@@ -22,11 +22,11 @@
 #define SLIDE_MCAST_OPTION MCAST_JOIN_SOURCE_GROUP
 #define SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS 2
 #define FOPS_KERNEL_PAGE_SETUP_ATTEMPTS 2
-#define BUILD_VARIANT_LABEL "b5q-F731NKSS5EYGB-dm1q-official-pipefix-tracefs-configfs-pipe-root"
+#define BUILD_VARIANT_LABEL "b5q-F731NKSS5EYGB-dm1q-official-classic-reclaim-tracefs-configfs-pipe-root"
 #define APP_PHYS_P0_ORACLE 1
 #define APP_TRACEFS_SLIDE 1
 #define APP_CLOSED_FOPS_ROUTE 1
-#define APP_CONTROLLED_MM_GROUP_RECLAIM 1
+#define APP_CONTROLLED_MM_GROUP_RECLAIM 0
 #define APP_FOPS_ROUTE_COARSE_DELAY_USEC 50000
 /* Runs 1-3 evidence: attempt-1 timing (0 ticks) passed the PI/MCAST stage;
    attempt-2 timing (0x10) panicked twice at rtmutex_common.h:118. Pin all
