@@ -406,3 +406,38 @@ Label: `b5q-F731NKSS5EYGB-dm1q-ksnitch-tracefs-configfs-pipe-root`.
 
 No timeout, controlled-mm geometry, reclaim, pipe, target offset, or KernelSU
 logic is changed. Root, Phase C, and KernelSU remain unconfirmed.
+
+## F731N configfs write-geometry gate
+
+The first hardware run with the deployed-dm1q KernelSnitch engine completed a
+32/32 controlled-mm group on attempt 2, reclaimed the page, completed the
+MCAST stale write, and verified the fake fops table. The first configfs CFI
+write then failed fail-closed with `errno=34` (`ERANGE`):
+
+```text
+group base:      ffffff8902000000
+payload delta:   -0xe80
+SCRATCH_OFF:     +0x3000
+scratch target:  ffffff8902002180
+configfs end:    0x21a3
+search window:   0x21a3..0x23a2
+```
+
+This is a deterministic address-encoding rejection in the original
+`configfs_write_once()` path. Every candidate in that bounded window has a
+zero third byte, so no valid 24-bit `buffer_size` can be encoded. It is not a
+timeout, collision, reclaim, MCAST, target-offset, or KernelSU failure.
+
+F731N now checks the same configfs write geometry only after a complete
+controlled-mm group has been collected and before reclaim or the stack writer
+runs. An unencodable FOPS group is retained, marked rejected, and excluded
+while the original dm1q search continues with a fresh group. The gate is
+enabled only by `APP_CONFIGFS_WRITE_PAGE_GATE` in the F731N target; a rebuilt
+dm1q payload does not contain the new reject path.
+
+No timeout, KernelSnitch measurement, group geometry, reclaim, MCAST, fops,
+pipe, root, or KernelSU operation was changed.
+
+Published build size: `132008`.
+SHA-256: `c1de751074b027b3e303c50fe9b34b9b3293746d3bed8afdd63aade29341b794`.
+Root, Phase C, and KernelSU remain unconfirmed.

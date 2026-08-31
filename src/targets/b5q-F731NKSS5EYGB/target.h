@@ -28,6 +28,7 @@
 #define APP_CLOSED_FOPS_ROUTE 1
 #define APP_CONTROLLED_MM_GROUP_RECLAIM 1
 #define APP_DM1Q_KSNITCH_ENGINE 1
+#define APP_CONFIGFS_WRITE_PAGE_GATE 1
 #define APP_FOPS_ROUTE_COARSE_DELAY_USEC 50000
 /* Runs 1-3 evidence: attempt-1 timing (0 ticks) passed the PI/MCAST stage;
    attempt-2 timing (0x10) panicked twice at rtmutex_common.h:118. Pin all

@@ -290,7 +290,7 @@
       "kernelVersions": ["5.15.153"],
       "exploit": {
         "url": "artifacts/b5q-F731NKSS5EYGB/cve-2026-43499-app.so",
-        "size": 131672
+        "size": 132008
       },
       "kernelsu": {
         "url": "kernelsu/ksud-b5q-F731NKSS5EYGB-kdp",
