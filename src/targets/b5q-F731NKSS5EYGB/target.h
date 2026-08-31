@@ -22,7 +22,7 @@
 #define SLIDE_MCAST_OPTION MCAST_JOIN_SOURCE_GROUP
 #define SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS 2
 #define FOPS_KERNEL_PAGE_SETUP_ATTEMPTS 2
-#define BUILD_VARIANT_LABEL "b5q-F731NKSS5EYGB-dm1q-exact-tracefs-configfs-pipe-root"
+#define BUILD_VARIANT_LABEL "b5q-F731NKSS5EYGB-dm1q-official-pipefix-tracefs-configfs-pipe-root"
 #define APP_PHYS_P0_ORACLE 1
 #define APP_TRACEFS_SLIDE 1
 #define APP_CLOSED_FOPS_ROUTE 1
