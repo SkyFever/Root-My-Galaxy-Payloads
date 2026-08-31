@@ -238,8 +238,8 @@ NDK r29 (`29.0.14206865`) produced:
 
 ```text
 cve-2026-43499-app.so
-  size: 132520
-  SHA-256: 66e811cb1b7a60f82938f266f2f2ba1ca2d4425bec7376faef37d324983b91fd
+  size: 131672
+  SHA-256: 259ed4b6214e0a22838f8fbc3a0072b38785616420f52606b451fef8a2e3eb80
 
 cve-2026-43499-app.release.so
   size: 104128
@@ -371,12 +371,38 @@ No exploit, reclaim, timeout, or target-offset logic is changed by this
 correction. The F731N feed now publishes the existing plain app build:
 
 ```text
-label: b5q-F731NKSS5EYGB-tracefs-shaped-configfs-pipe-root
-size: 132520
-sha256: 66e811cb1b7a60f82938f266f2f2ba1ca2d4425bec7376faef37d324983b91fd
+label: b5q-F731NKSS5EYGB-dm1q-ksnitch-tracefs-configfs-pipe-root
+size: 131672
+sha256: 259ed4b6214e0a22838f8fbc3a0072b38785616420f52606b451fef8a2e3eb80
 ELF: AArch64 Android API 35, not stripped
 ```
 
 The earlier 104128-byte runtime results remain historical records for the
 superseded release artifact. The next hardware run is the first run of the
 dm1q-matching publication class. Phase C and KernelSU remain unconfirmed.
+
+## Deployed dm1q KernelSnitch alignment
+
+The next 132520-byte hardware run resolved the tracefs KASLR slide canonically
+on all eight app attempts, but each attempt stopped while collecting the
+controlled-mm group at 8, 16, or 24 of 32 objects. The 15-minute app limit
+expired without reaching MCAST, configfs, pipe, root, or KernelSU.
+
+Binary provenance then showed that the published dm1q artifact and a current
+dm1q rebuild do not use the same KernelSnitch collision engine. The relevant
+published-dm1q functions are:
+
+- `kernelsnitch_find_collisions`: 816 bytes / 204 instructions;
+- `kernelsnitch_bruteforce`: 400 bytes / 100 instructions;
+- `prepare_kernel_page`: 3776 bytes / 944 instructions.
+
+The F731N target now selects those deployed-dm1q code paths at compile time.
+All three rebuilt F731N functions match the published dm1q instruction counts
+and mnemonic sequences. Other targets retain the current common engine.
+
+Final build size: `131672`.
+SHA-256: `259ed4b6214e0a22838f8fbc3a0072b38785616420f52606b451fef8a2e3eb80`.
+Label: `b5q-F731NKSS5EYGB-dm1q-ksnitch-tracefs-configfs-pipe-root`.
+
+No timeout, controlled-mm geometry, reclaim, pipe, target offset, or KernelSU
+logic is changed. Root, Phase C, and KernelSU remain unconfirmed.
