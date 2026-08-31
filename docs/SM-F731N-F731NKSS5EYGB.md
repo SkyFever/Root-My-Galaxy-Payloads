@@ -193,33 +193,36 @@ p0_fingerprint.h SHA-256:
 160fa0d486fefe8f5af157a129a56327252f6658f6edaf47dbc7fce48638a047
 ```
 
-## KernelSU diagnostic candidate
+## KernelSU exact-source build
 
-The closest official module is the device-tested DYI3 Samsung 5.15.153
-no-patch-text build. It is not silently treated as an exact F731N source
-build. The candidate was gated as follows:
+The F731N EYGB module was built from Samsung's released
+`SM-F731N_KOR_15_Opensource/kernel_platform/common` tree, not repackaged from
+the DYI3 module. Device execution has so far covered only the userspace binary
+and embedded-asset extraction; module initialization remains untested.
 
-- Recovered F731N `Module.symvers` contains 8,349 exact target CRCs.
-- All 200 undefined KO symbols exist in the F731N recovered ELF.
+- The connected device's `/proc/config.gz` was applied; the only resulting
+  config delta was `CONFIG_PAHOLE_VERSION`.
+- The build used Android clang `r450784e`, matching the running kernel.
+- The module carries exact
+  `5.15.153-android13-8-30958511-abF731NKSS5EYGB` vermagic.
+- All 200 undefined KO symbols exist in the generated target symbol list.
 - 64 symbols intentionally use the manual kallsyms path.
 - `__versions` is zero-length and target CRC mismatches are zero.
-- The relevant F731N BTF layouts match the 5.15.153 module family.
-- The fixed-size `.modinfo` section alone was repackaged to carry exact
-  `5.15.153-android13-8-30958511-abF731NKSS5EYGB` vermagic.
+- `CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y` is set for the Samsung KDP/RKP path.
 - A clean KernelSU v3.2.5 (`b0bc817`) userspace build embeds that KO as
   `android13-5.15_kernelsu.ko`.
 
 ```text
 android13-5.15.153_kernelsu-b5q-F731NKSS5EYGB-kdp.ko
-  size: 327120
-  SHA-256: b5dcf3216bd1d0158c3103da0d49e2d604ee179574724172e825de3d4c29946a
+  size: 357048
+  SHA-256: 07024ab7e3b836d53b1f6902bcace67e7175358b4e68d568ad67f17d555237f6
 
 ksud-b5q-F731NKSS5EYGB-kdp
-  size: 4873216
-  SHA-256: a1f8b25107a411dfb2522e6847d6d7c52f08b469f7544ad518ddf634b486f9bd
+  size: 4775552
+  SHA-256: 54db10df723877729410ea1809e8cac3f911dcf78f5b7b45dbe41b876fefc3a1
 ```
 
-This remains a hardware-untested diagnostic candidate. Late-loading is
+This remains hardware-untested. Late-loading is
 RAM-only and does not write boot, vbmeta, or Knox state; a reboot restores the
 stock kernel. It can still panic the running kernel if a runtime-only ABI
 difference exists, so successful exploit and module-load checkpoints must be

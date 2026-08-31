@@ -32,27 +32,26 @@ between KMIs.
 | `ksud-dm2q-S916BXXSAFZG1-kdp` | Same exact S916B build | `android13-5.15` | Kallsyms-aware late-load binary embedding the exact-source FZG1 module; hardware load untested |
 | `android13-5.15.153_kernelsu-dm1q-S911U1UES6DYI3-kdp.ko` | `SM-S911U1`, `S911U1UES6DYI3` | `android13-5.15.153` | Exact DYI3 module with target `vermagic`, audited for manual relocation; no-patch-text build (RKP) with kretprobe fallback hooks |
 | `ksud-dm1q-S911U1UES6DYI3-kdp` | Same exact DYI3 build | `android13-5.15.153` | Device-tested late-load binary embedding the exact DYI3 no-patch-text module |
-| `android13-5.15.153_kernelsu-b5q-F731NKSS5EYGB-kdp.ko` | `SM-F731N`, `F731NKSS5EYGB` | `android13-5.15.153` | Diagnostic candidate derived from the audited DYI3 no-patch-text module with exact F731N `vermagic`; F731N hardware load untested |
-| `ksud-b5q-F731NKSS5EYGB-kdp` | Same F731N candidate | `android13-5.15` | Clean KernelSU v3.2.5 userspace build embedding the F731N candidate module; hardware load untested |
+| `android13-5.15.153_kernelsu-b5q-F731NKSS5EYGB-kdp.ko` | `SM-F731N`, `F731NKSS5EYGB` | `android13-5.15.153` | Exact-source F731N module with target `vermagic`, built with the live config and Samsung KDP/RKP/DEFEX support; hardware load untested |
+| `ksud-b5q-F731NKSS5EYGB-kdp` | Same exact F731N build | `android13-5.15` | Clean KernelSU v3.2.5 userspace build embedding the exact-source F731N module; hardware load untested |
 | `android12-5.10_kernelsu-A536EXXSNGZG3-kdp.ko` | `SM-A536E`, `A536EXXSNGZG3` | `android12-5.10` | Device-tested exact A53 module with Samsung KDP/RKP/DEFEX support and live text/table patching disabled |
 | `ksud-A536EXXSNGZG3-kdp` | Same exact A53 build | `android12-5.10` | Device-tested late-load binary embedding the exact A53 module |
 
 The standalone `.ko` files are retained for auditing. Root My Galaxy downloads
 the corresponding `ksud-*` file because `ksud late-load` loads its embedded
 `<kmi>_kernelsu.ko` asset.
-The F731N EYGB pair is deliberately labeled a diagnostic candidate, not an
-exact-source module. The connected KSS kernel and TBS donor are build
-`30958511`; the closest device-tested DYI3 module is Samsung 5.15.153 build
-`30958972`. Its zero-length `__versions` module resolves all 200 undefined
-symbols against the recovered F731N ELF: zero names are missing, 64 use the
-manual kallsyms path, and the recovered target CRC table reports zero
-mismatches. The relevant BTF layouts also match. Only the fixed-size
-`.modinfo` section was repackaged to carry the exact F731N release; the
-no-patch-text code was not changed. The KO SHA-256 is
-`b5dcf3216bd1d0158c3103da0d49e2d604ee179574724172e825de3d4c29946a`.
+The F731N EYGB pair is built from Samsung's released
+`SM-F731N_KOR_15_Opensource/kernel_platform/common` tree with the connected
+device's `/proc/config.gz` and Android clang `r450784e`. The module release is
+`5.15.153-android13-8-30958511-abF731NKSS5EYGB`; its zero-length `__versions`
+section and retained symbol tables are intended for KernelSU's kallsyms-aware
+manual loader. Static audit reports 200 undefined symbols, zero missing target
+symbols, 64 kallsyms-resolved symbols, and zero CRC mismatches. The build sets
+`CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y`. The KO SHA-256 is
+`07024ab7e3b836d53b1f6902bcace67e7175358b4e68d568ad67f17d555237f6`.
 The clean v3.2.5 ksud SHA-256 is
-`a1f8b25107a411dfb2522e6847d6d7c52f08b469f7544ad518ddf634b486f9bd`.
-Do not promote this pair beyond the F731N runtime gate.
+`54db10df723877729410ea1809e8cac3f911dcf78f5b7b45dbe41b876fefc3a1`.
+Module initialization remains untested on F731N hardware.
 
 
 The S916B FZG1 pair is built from Samsung's released `SM-S916B_16_Opensource` tree with the live FZG1 config and Android clang `r450784e`. Its zero-length `__versions` section and retained symbol tables are intended for KernelSU's kallsyms-aware manual loader. Audit against the exact recovered FZG1 `vmlinux.elf` found all 200 undefined names. Plain `insmod` is not supported. The target patch [`KernelSU-v3.2.5-dm2q-fzg1.patch`](patches/KernelSU-v3.2.5-dm2q-fzg1.patch) selects the exact FZG1 `enum ucount_type` ABI and hard-stops RKP syscall-table writes; the build also sets `CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y`. Use the root helper's guarded `--late-load` operation so the loader's security-domain and stdio transition can complete safely. Module initialization is not yet confirmed on S916B hardware.
