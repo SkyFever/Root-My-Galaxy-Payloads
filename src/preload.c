@@ -125,18 +125,6 @@ __attribute__((constructor)) static void load(void) {
   started = 1;
   set_unbuffer();
   wait_for_boot_quiet_window();
-#if defined(APP_PAYLOAD) && APP_PAYLOAD && \
-    defined(APP_REVALIDATE_INHERITED_SLIDE_WITH_TRACEFS) && \
-    APP_REVALIDATE_INHERITED_SLIDE_WITH_TRACEFS
-  const char *inherited_slide = getenv("SLIDE_P0_OFFSET");
-  if (inherited_slide && *inherited_slide) {
-    pr_info("clearing inherited forced p0 offset=%s for tracefs revalidation\n",
-            inherited_slide);
-    unsetenv("SLIDE_P0_OFFSET");
-    unsetenv("P0_GATE_PAGE_STRUCT");
-    unsetenv("P0_PROBE_PAGE_STRUCT");
-  }
-#endif
 
   int max_attempts = env_int(
       "EXPLOIT_ATTEMPTS", DEFAULT_EXPLOIT_ATTEMPTS, 1, 64);

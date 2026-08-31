@@ -22,15 +22,15 @@
 #define SLIDE_MCAST_OPTION MCAST_JOIN_SOURCE_GROUP
 #define SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS 2
 #define FOPS_KERNEL_PAGE_SETUP_ATTEMPTS 2
-#define BUILD_VARIANT_LABEL "b5q-F731NKSS5EYGB-tracefs-mcast-configfs-pipe-root"
+#define BUILD_VARIANT_LABEL "b5q-F731NKSS5EYGB-tracefs-shaped-configfs-pipe-root"
 #define APP_PHYS_P0_ORACLE 1
 #define APP_TRACEFS_SLIDE 1
-#define APP_REVALIDATE_INHERITED_SLIDE_WITH_TRACEFS 1
 #define APP_CLOSED_FOPS_ROUTE 1
 #define APP_CONTROLLED_MM_GROUP_RECLAIM 1
 #define APP_FOPS_ROUTE_COARSE_DELAY_USEC 50000
-/* Start from the official 5.15.153 dm1q MCAST timing baseline.  This value
-   remains diagnostic-only for b5q until the F731N runtime gate passes. */
+/* Runs 1-3 evidence: attempt-1 timing (0 ticks) passed the PI/MCAST stage;
+   attempt-2 timing (0x10) panicked twice at rtmutex_common.h:118. Pin all
+   attempts to the passing value until hardware says otherwise. */
 #define APP_FOPS_ROUTE_FINE_DELAY_TICKS 0ULL
 #define APP_FOPS_BEFORE_PIPE 1
 #define APP_EXACT_PIPE_BUFFER_ONLY 1
