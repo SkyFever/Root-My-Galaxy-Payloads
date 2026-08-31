@@ -239,16 +239,17 @@ NDK r29 (`29.0.14206865`) produced:
 ```text
 cve-2026-43499-app.so
   size: 132520
-  SHA-256: 4d962267bf7b63ee60eaec01b14306a19bb136f1eff79115f45adc58272eb223
+  SHA-256: 66e811cb1b7a60f82938f266f2f2ba1ca2d4425bec7376faef37d324983b91fd
 
 cve-2026-43499-app.release.so
   size: 104128
   SHA-256: 75571a9f338f716f56dc275aca701ccb2cec2fd225e5da7b85c497368674e09f
 ```
 
-Both are AArch64 Android API 35 shared objects. The release object is stripped,
-retains a valid dynamic and section table after fixed-size padding, embeds only
-the F731N variant label, and was compiled with `SLIDE_STACK_WRITER=1`.
+Both are AArch64 Android API 35 shared objects. Matching the current dm1q feed,
+the published app artifact is the non-stripped plain `make all` object. The
+fixed-size stripped release object remains a local build product. Both embed
+only the F731N variant label and were compiled with `SLIDE_STACK_WRITER=1`.
 All direct symbol macros, `ashmem_misc+0x10`, the logger and boot-id nested
 pointers, and the BTF layouts were revalidated against the recovered artifacts.
 
@@ -261,7 +262,8 @@ Before the first connected-device run:
 1. Confirm the relative feed paths and actual artifact sizes once more.
 2. Commit and push the isolated `f731n-eygb` branch to the SkyFever fork.
 3. Run `C:\Users\SkyFever\Documents\adb_clear_payload.ps1` exactly once.
-4. Verify the app selects `b5q-F731NKSS5EYGB` and downloads both hashes above.
+4. Verify the app selects `b5q-F731NKSS5EYGB` and downloads the published
+   plain-build hash above.
 5. Run the official app route and preserve its last printed checkpoint.
 6. Judge exploit/root and KernelSU late-load separately.
 7. If the kernel panics, allow reboot and re-check green boot state, Knox
@@ -357,3 +359,24 @@ again and the normal app build label is restored. This result only validates
 the cache-table offset and the preceding primitive checkpoints. Root and
 KernelSU remain unconfirmed until a rebuilt payload passes the subsequent
 original-repository stages on hardware.
+
+## dm1q publication-path alignment
+
+The current dm1q feed publishes the non-stripped plain `make all` app object;
+its fixed-size 104128-byte `make release` object predates that path. The F731N
+feed had incorrectly continued to publish its stripped release object even
+after its source and target macros were aligned with dm1q.
+
+No exploit, reclaim, timeout, or target-offset logic is changed by this
+correction. The F731N feed now publishes the existing plain app build:
+
+```text
+label: b5q-F731NKSS5EYGB-tracefs-shaped-configfs-pipe-root
+size: 132520
+sha256: 66e811cb1b7a60f82938f266f2f2ba1ca2d4425bec7376faef37d324983b91fd
+ELF: AArch64 Android API 35, not stripped
+```
+
+The earlier 104128-byte runtime results remain historical records for the
+superseded release artifact. The next hardware run is the first run of the
+dm1q-matching publication class. Phase C and KernelSU remain unconfirmed.
