@@ -310,3 +310,36 @@ The derivative build changes no target address, layout, reclaim count, timing,
 writer, root, or KernelSU input. It enables b5q-only unbuffered log lines
 immediately before and after `controlled_mm_leak()` once the largest collected
 group reaches 24 objects. The clean port remains preserved at `ce90ee3`.
+
+## Group checkpoint hardware result
+
+The group-checkpoint release from main commit `daf9851`, SHA-256
+`79073c7a0302d1da921eb1faa76daabc1bbbd7a84248e3c3e73ca14a321d8647`,
+was executed through the app. Install-history record
+`4acaf952-e333-416d-8658-ee7a70dbed1e` records a failed result. The user
+reported no reboot, and the boot ID remained
+`e42b7a9c-b795-4bf5-a641-eb7ec81a980b`.
+
+No attempt reached a full controlled-mm group, reclaim, stack writer, fops,
+root, or KernelSU. In the attempts that reached a peak group count of 24, the
+outer checkpoint showed two or three successful `controlled_mm_leak()`
+returns followed by an `enter` line with no matching `return` line. The
+supervisor then terminated the stalled attempt at its existing 120-second
+limit. The observed stop is therefore inside the existing
+`controlled_mm_leak()` call, before group completion.
+
+## Internal checkpoint derivative
+
+The next derivative adds b5q-only log checkpoints to the existing
+`controlled_mm_leak()` path after peak group count 24. It records entry and
+return for the existing setup, profile, clone, memfd, waitpid, match or
+bruteforce, and cleanup stages. It does not change control flow, target
+addresses, structure layouts, collision counts, reclaim parameters, timings,
+writer behavior, root behavior, or KernelSU inputs.
+
+```text
+cve-2026-43499-app.release.so
+  label: b5q-F731NKSS5EYGB-internal-checkpoint
+  size: 104128
+  SHA-256: c0773ee3461a803df12308b011601026d39ce465f9aa9c8cbafdc6e79f72ec38
+```

