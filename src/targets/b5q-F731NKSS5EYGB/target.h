@@ -10,7 +10,13 @@
  * configfs, and pipe route without target-specific timing or reclaim tuning.
  */
 
-#define MM_STRUCT_SZ 0x3e0
+/*
+ * KernelSnitch walks mm_struct SLUB objects, not bare BTF structures.
+ * EYGB mm_cache_init() adds cpumask_size() and SLAB_HWCACHE_ALIGN rounds the
+ * runtime object size to 0x400. /proc/slabinfo reports 1024 bytes, 32
+ * objects, and 8 pages for the mm_struct cache.
+ */
+#define MM_STRUCT_SZ 0x400
 #define KMALLOC_CGROUP_TYPE 1
 #define KMALLOC_CACHE_TYPES 3
 #define KERNELSNITCH_MTE_ENABLED 0

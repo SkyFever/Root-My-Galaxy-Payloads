@@ -14,10 +14,11 @@ The firmware, raw Image, recovered ELF, BTF, physical load addresses, payload
 symbols, structure layouts, tracefs slide anchor, MCAST stack overlay, and P0
 fingerprint have been derived during the clean pass.
 
-The F731N target header and release payload have been produced and pass the
-clean static gates recorded below. The exact-source KernelSU module and
-late-load binary have not been produced. The support profile remains
-unpublished.
+The F731N target header, release payload, exact-source KernelSU module, and
+late-load binary have been produced and pass the clean static gates recorded
+below. The first clean hardware payload run failed before the fops or KernelSU
+stages. Its exact result and the corrected allocation stride are recorded in
+section 12.
 
 ## 1. Runtime identity
 
@@ -266,6 +267,22 @@ nr_workers = 0x30
 nr_idle = 0x34
 ```
 
+The BTF `sizeof(struct mm_struct) = 0x3e0` is not the KernelSnitch allocation
+stride. The exact 5.15 source computes the cache request as
+`sizeof(struct mm_struct) + cpumask_size()` and creates it with
+`SLAB_HWCACHE_ALIGN`. The connected EYGB device reports:
+
+```text
+mm_struct 708 708 1024 32 8 : tunables 0 0 0 : slabdata 23 23 0
+```
+
+Thus the runtime SLUB object size and KernelSnitch candidate stride are
+`0x400`, with 32 objects per 8-page slab. The target macro is:
+
+```c
+#define MM_STRUCT_SZ 0x400
+```
+
 ## 6. Physical load proof
 
 The exact BL archive contains a decompressed ABL ELF and its LinuxLoader PE.
@@ -378,8 +395,8 @@ The clean target header is:
 
 ```text
 src/targets/b5q-F731NKSS5EYGB/target.h
-size: 8654
-SHA-256: d5b9aaa44412f06e3c439251e80cde6fa05275c203d693bb0dcbab870573647b
+size: 8930
+SHA-256: 30a41a8226506f1f4264c727264ba3e9c1a5c6e69de511fbfdfb930121b6cc50
 ```
 
 An automated comparison against the exact EYGB ELF and raw BTF passed:
@@ -398,7 +415,7 @@ package `29.0.14206865` and the repository's `release` target:
 ```text
 artifact: artifacts/b5q-F731NKSS5EYGB/cve-2026-43499-app.so
 size: 104128
-SHA-256: 4ccdcbad176c286ac5c5a6a8ade41473389da71ade461c725bef2ab05e020940
+SHA-256: 4c15ed8bd3a37cc126ee74c9e7219e968a5880be89962dac3fed18a639f1df2e
 format: ELF64 little-endian AArch64 shared object
 Android API: 35
 NDK: r29 / 29.0.14206865
@@ -408,7 +425,10 @@ build label: b5q-F731NKSS5EYGB-clean-tracefs-mcast-configfs-pipe-root
 Deleting the target build directory and running the same `release` target a
 second time produced the identical 104128-byte file and SHA-256.
 
-No payload hardware execution has been performed for this clean build.
+The corrected release was built twice from a cleaned target build directory;
+both 104128-byte outputs were byte-identical. Its hardware checkpoint is
+pending. The earlier `0x3e0`-stride clean build and its failed hardware result
+remain recorded in section 12.
 
 ## 10. KernelSU gate
 
@@ -537,7 +557,7 @@ exact-source KernelSU patch/build: PASS
 KernelSU symbol and relocation audit: PASS
 KO vermagic, size, SHA-256: PASS
 ksud embedded-asset identity, size, SHA-256: PASS
-support feed JSON/path validation: pending
+support feed JSON/path validation: PASS
 payload hardware root checkpoint: pending
 KernelSU late-load hardware checkpoint: pending
 post-reboot stock-integrity recheck: pending
@@ -546,3 +566,36 @@ post-reboot stock-integrity recheck: pending
 Panic, reboot, timeout, app failure, or missing explicit root checkpoint is a
 failed hardware gate. A stack writer is not retried on the same boot after it
 has executed.
+
+## 12. First clean hardware result and stride correction
+
+The published clean payload SHA-256 was
+`4ccdcbad176c286ac5c5a6a8ade41473389da71ade461c725bef2ab05e020940`.
+The downloaded payload and the copy in `/data/local/tmp/ksu-payload` matched
+that hash. The downloaded b5q `ksud` matched
+`393162311d0c10377c024c0c74ff2790676c17024ae77928b4ecc1b30e7761b4`.
+The application cache-reset script was run before the test.
+
+The application history identifies the exact clean build, Shizuku shell
+context, and failure sequence:
+
+```text
+started: 2026-09-02 13:18:00.834 +09:00
+result: Failed
+context: uid=2000, attr=u:r:shell:s0
+build: b5q-F731NKSS5EYGB-clean-tracefs-mcast-configfs-pipe-root
+reclaim: legacy
+attempts 1-6: KernelSnitch mm_struct leak failed
+attempt 7: entered with the same build and P0 profile; log ended
+device: rebooted during this execution
+stored boot reason: reboot
+SYSTEM_LAST_KMSG: no entry
+```
+
+No fops write, pipe physrw, credential change, or KernelSU late-load checkpoint
+was reached. The failed build used `MM_STRUCT_SZ=0x3e0`. Direct runtime
+inspection after reboot showed the `mm_struct` SLUB object size is `0x400`, so
+the KernelSnitch candidate stride was incorrect. The target and this procedure
+now use `0x400`. The corrected release payload is 104128 bytes with SHA-256
+`4c15ed8bd3a37cc126ee74c9e7219e968a5880be89962dac3fed18a639f1df2e`;
+its hardware checkpoint is pending.

@@ -262,6 +262,33 @@ page.slab_cache = 0x18
 page.page_type = 0x30
 ```
 
+### Derive the KernelSnitch `MM_STRUCT_SZ` separately
+
+Do not set `MM_STRUCT_SZ` to the bare BTF `sizeof(struct mm_struct)` without
+checking the target's `mm_struct` SLUB cache. KernelSnitch uses this macro as
+the address stride between allocated cache objects. In 5.15,
+`mm_cache_init()` creates the cache with:
+
+```c
+mm_size = sizeof(struct mm_struct) + cpumask_size();
+mm_cachep = kmem_cache_create_usercopy("mm_struct", mm_size,
+        ARCH_MIN_MMSTRUCT_ALIGN, SLAB_HWCACHE_ALIGN | ...);
+```
+
+Therefore the allocation stride can be larger than the BTF structure. On a
+running target, use the `objsize` field from the exact `/proc/slabinfo` row and
+also record `objs_per_slab` and `pages_per_slab`:
+
+```sh
+grep '^mm_struct ' /proc/slabinfo
+```
+
+If runtime access is unavailable, derive `sizeof(struct mm_struct) +
+cpumask_size()` from the exact source/config and apply the target SLUB cache
+alignment. Hardware execution must still verify the resulting row. Keep the
+bare BTF size in the layout record, but use the SLUB object size for
+`MM_STRUCT_SZ`.
+
 ## 4. Confirm physical load addresses
 
 Do not copy the S25U `P0_KERNEL_PHYS_LOAD` value. Extract the BL archive and
