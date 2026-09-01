@@ -287,3 +287,26 @@ Before the first connected-device run:
 
 No boot, vbmeta, or persistent partition write is authorized by this candidate
 flow. Resident-agent work remains out of scope until the runtime gate passes.
+
+## First hardware result and checkpoint derivative
+
+The clean release from main commit `eb017bd` was executed once. The device
+downloaded the exact published payload and ksud hashes. The app's persisted
+record ended with:
+
+```text
+[+] slide-kaslr-ok source=forced ... p0_offset=00020000
+[*] controlled mm group attempt=24 group=0 ... count=24
+```
+
+The following boot created
+`SYSTEM_LAST_KMSG_30_20260902_004034_KP`. The shell-visible entry reports
+`Last boot reason: reboot` but exposes no kernel fault PC or call trace. No
+selected-group, reclaim, writer, fops, root, or KernelSU checkpoint is present.
+After reboot, verified boot is green, the bootloader lock property is 1,
+verity is enforcing, SELinux is Enforcing, and the warranty-bit property is 0.
+
+The derivative build changes no target address, layout, reclaim count, timing,
+writer, root, or KernelSU input. It enables b5q-only unbuffered log lines
+immediately before and after `controlled_mm_leak()` once the largest collected
+group reaches 24 objects. The clean port remains preserved at `ce90ee3`.

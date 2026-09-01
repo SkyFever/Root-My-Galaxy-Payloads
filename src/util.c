@@ -1180,6 +1180,10 @@ static int collect_controlled_mm_group(size_t cpu_count, uintptr_t *base_out,
   uintptr_t hint = 0;
   unsigned long chosen_attempt = 0;
   int result = 0;
+#if defined(APP_CONTROLLED_MM_CALL_CHECKPOINT) && \
+    APP_CONTROLLED_MM_CALL_CHECKPOINT
+  size_t peak_count = 0;
+#endif
 
   if (!bases || !counts || !fds || !seen || !opaque) {
     SYSCHK(-1);
@@ -1200,8 +1204,25 @@ static int collect_controlled_mm_group(size_t cpu_count, uintptr_t *base_out,
     size_t slot;
     size_t group = max_groups;
     int hint_hit;
-    int fd = controlled_mm_leak(cpu_count, hint, &mm, &hint_hit);
+    int fd;
 
+#if defined(APP_CONTROLLED_MM_CALL_CHECKPOINT) && \
+    APP_CONTROLLED_MM_CALL_CHECKPOINT
+    if (peak_count >= APP_CONTROLLED_MM_CALL_CHECKPOINT_MIN_COUNT) {
+      pr_info("controlled mm leak checkpoint stage=enter attempt=%lu "
+              "peak=%zu hint=%016zx\n",
+              attempt, peak_count, hint);
+    }
+#endif
+    fd = controlled_mm_leak(cpu_count, hint, &mm, &hint_hit);
+#if defined(APP_CONTROLLED_MM_CALL_CHECKPOINT) && \
+    APP_CONTROLLED_MM_CALL_CHECKPOINT
+    if (peak_count >= APP_CONTROLLED_MM_CALL_CHECKPOINT_MIN_COUNT) {
+      pr_info("controlled mm leak checkpoint stage=return attempt=%lu "
+              "peak=%zu fd=%d mm=%016zx hint_hit=%d\n",
+              attempt, peak_count, fd, mm, hint_hit);
+    }
+#endif
     if (fd == -2) {
       continue;
     }
@@ -1260,6 +1281,12 @@ static int collect_controlled_mm_group(size_t cpu_count, uintptr_t *base_out,
     seen[group * batch + slot] = 1;
     fds[group * batch + slot] = fd;
     counts[group]++;
+#if defined(APP_CONTROLLED_MM_CALL_CHECKPOINT) && \
+    APP_CONTROLLED_MM_CALL_CHECKPOINT
+    if (counts[group] > peak_count) {
+      peak_count = counts[group];
+    }
+#endif
     if (counts[group] == 1 || counts[group] % 8 == 0 ||
         counts[group] + 1 >= batch) {
       pr_info("controlled mm group attempt=%lu group=%zu base=%016zx slot=%zu count=%zu hint=%d\n",
