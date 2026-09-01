@@ -73,23 +73,21 @@ Read-only checks on the KSS device established:
 - `mm_struct` slab geometry is object size `0x400`, 32 objects per slab,
   order 3. BTF reports C size `0x3e0`.
 - The boot configuration does not enable randomized kernel-stack offsets.
-- `kasan=off` is present in the effective boot arguments, so the official
-  5.15.153 non-MTE KernelSnitch mode is selected even though MTE/HW-tag KASAN
-  support is compiled in.
+- `kasan=off` is present in the effective boot arguments, so the target uses
+  non-MTE KernelSnitch mode even though MTE/HW-tag KASAN support is compiled
+  in.
 - A one-second tracefs diagnostic was restored to the original
   `enable=0`, `tracing_on=0` state and repeatedly produced
   `worker_thread+0x78/0x738`.
 
 No exploit or payload was executed while collecting this inventory.
 
-## Official route selection
+## F731N route derivation
 
-The closest official profile is `dm1q-S911U1UES6DYI3`: it is also Samsung
-5.15.153 on SM8550 and its kernel build number is only 4,641 higher. That
-profile explicitly supersedes the unresolved pselect route with the official
-tracefs/MCAST stack writer (`SLIDE_STACK_WRITER=1`).
-
-F731N was derived independently and reaches the same overlay:
+The F731N route is selected from the target kernel disassembly. It enables the
+repository's shared tracefs/MCAST implementation (`SLIDE_STACK_WRITER=1`),
+but does not import another target's offsets or timing table. The target stack
+overlay is:
 
 ```text
 futex waiter from syscall-entry SP:
@@ -125,9 +123,8 @@ The worker anchor is the return after `bl schedule` in `worker_thread`:
 `SLIDE_TRACEFS_WORKER_CALLER_OFF=0x0010d370`. The latter is independently
 confirmed by the KSS tracefs diagnostic.
 
-BTF reports `sizeof(struct skb_shared_info) == 344`, consistent with the
-official MCAST reclaim geometry `SKB_DATA_DELTA=-0xe80` and send size
-`0x8e80`.
+BTF reports `sizeof(struct skb_shared_info) == 344`; the target therefore uses
+`SKB_DATA_DELTA=-0xe80` and send size `0x8e80`.
 
 ## Recovered symbols
 
@@ -141,7 +138,7 @@ All offsets are relative to `0xffffffc008000000`.
 | `OVERRIDE_CREDS_OFF` | `override_creds` | `0x0011e918` |
 | `ROOT_TASK_GROUP_OFF` | `root_task_group` | `0x02b79ac0` |
 | `SELINUX_ENFORCING_OFF` | `selinux_state.enforcing` | `0x02c4e438` |
-| `KMALLOC_CACHES_OFF` | `kmalloc_caches` | `0x01f77910` |
+| `KMALLOC_CACHES_OFF` | KSS runtime-confirmed cache table | `0x01f77590` |
 | `ANON_PIPE_BUF_OPS_OFF` | `anon_pipe_buf_ops` | `0x01da2f20` |
 | `SYSTEM_UNBOUND_WQ_OFF` | `system_unbound_wq` | `0x0295e480` |
 | `CALL_USERMODEHELPER_EXEC_WORK_OFF` | `call_usermodehelper_exec_work` | `0x00103e50` |
@@ -193,6 +190,24 @@ p0_fingerprint.h SHA-256:
 160fa0d486fefe8f5af157a129a56327252f6658f6edaf47dbc7fce48638a047
 ```
 
+## KSS runtime-confirmed cache table
+
+The KSS device read-only diagnostic observed the same 2 KiB pipe slab pointer
+on independently reclaimed pipe pages and found the normal/accounted cache
+slot geometry at:
+
+```text
+table base: ffffffc00a117590
+image offset: 0x01f77590
+normal1k: ffffff80011d2780
+normal2k: ffffff80011d2900
+cgroup1k: ffffff80011d2780
+cgroup2k: ffffff80011d2900
+```
+
+The target therefore uses `KMALLOC_CACHES_OFF=0x01f77590`. This value comes
+from the connected KSS device and is not copied from another profile.
+
 ## KernelSU exact-source build
 
 The F731N EYGB module was built from Samsung's released
@@ -241,12 +256,12 @@ NDK r29 (`29.0.14206865`) produced:
 
 ```text
 cve-2026-43499-app.so
-  size: 132520
-  SHA-256: 4d962267bf7b63ee60eaec01b14306a19bb136f1eff79115f45adc58272eb223
+  size: 132064
+  SHA-256: 544e5fb2bfd5994d0115995d528836057293cfee9e362bcaf51f62bf8d702670
 
 cve-2026-43499-app.release.so
   size: 104128
-  SHA-256: 75571a9f338f716f56dc275aca701ccb2cec2fd225e5da7b85c497368674e09f
+  SHA-256: 9765c2f935029dd34a439ca4030cc9009b1678d70955a38341dd23988e8e2be9
 ```
 
 Both are AArch64 Android API 35 shared objects. The release object is stripped,
