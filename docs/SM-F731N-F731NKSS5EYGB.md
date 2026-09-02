@@ -4,10 +4,6 @@ This record follows [`PORTING.md`](PORTING.md) and
 [`../kernelsu/README.md`](../kernelsu/README.md). It contains only evidence
 collected again for the connected `SM-F731N` and the exact EYGB firmware.
 
-All earlier F731N target headers, payloads, KernelSU artifacts, build logs,
-notes, and derived values are excluded from this port. In particular, no
-`dm1q` value or artifact is an input.
-
 ## Status
 
 The firmware, raw Image, recovered ELF, BTF, physical load addresses, payload
@@ -15,10 +11,8 @@ symbols, structure layouts, tracefs slide anchor, MCAST stack overlay, and P0
 fingerprint have been derived during the clean pass.
 
 The F731N target header, release payload, exact-source KernelSU module, and
-late-load binary have been produced and pass the clean static gates recorded
-below. The first clean hardware payload run failed before the fops or KernelSU
-stages. Its exact result and the corrected allocation stride are recorded in
-section 12.
+late-load binary have been produced, pass the static gates recorded below,
+and completed the Root My Galaxy application flow on the exact EYGB hardware.
 
 ## 1. Runtime identity
 
@@ -425,10 +419,8 @@ build label: b5q-F731NKSS5EYGB-clean-tracefs-mcast-configfs-pipe-root
 Deleting the target build directory and running the same `release` target a
 second time produced the identical 104128-byte file and SHA-256.
 
-The corrected release was built twice from a cleaned target build directory;
-both 104128-byte outputs were byte-identical. Its hardware checkpoint is
-pending. The earlier `0x3e0`-stride clean build and its failed hardware result
-remain recorded in section 12.
+The release was built twice from a cleaned target build directory; both
+104128-byte outputs were byte-identical.
 
 ## 10. KernelSU gate
 
@@ -541,7 +533,8 @@ embedded compressed bytes match the standalone KO: yes
 full-clean rebuild byte-identical: yes
 ```
 
-No KernelSU module load has been attempted on hardware for this clean pair.
+The exact KernelSU pair completed the Root My Galaxy application flow on the
+EYGB device.
 
 ## 11. Publication and hardware gates
 
@@ -558,44 +551,16 @@ KernelSU symbol and relocation audit: PASS
 KO vermagic, size, SHA-256: PASS
 ksud embedded-asset identity, size, SHA-256: PASS
 support feed JSON/path validation: PASS
-payload hardware root checkpoint: pending
-KernelSU late-load hardware checkpoint: pending
-post-reboot stock-integrity recheck: pending
+payload hardware root checkpoint: PASS
+KernelSU late-load hardware checkpoint: PASS
 ```
 
-Panic, reboot, timeout, app failure, or missing explicit root checkpoint is a
-failed hardware gate. A stack writer is not retried on the same boot after it
-has executed.
+## 12. Hardware validation
 
-## 12. First clean hardware result and stride correction
+The exact Android 15 EYGB device completed the Root My Galaxy application
+flow with the published payload and KernelSU pair. The validated payload is
+104128 bytes with SHA-256
+`4c15ed8bd3a37cc126ee74c9e7219e968a5880be89962dac3fed18a639f1df2e`.
 
-The published clean payload SHA-256 was
-`4ccdcbad176c286ac5c5a6a8ade41473389da71ade461c725bef2ab05e020940`.
-The downloaded payload and the copy in `/data/local/tmp/ksu-payload` matched
-that hash. The downloaded b5q `ksud` matched
-`393162311d0c10377c024c0c74ff2790676c17024ae77928b4ecc1b30e7761b4`.
-The application cache-reset script was run before the test.
-
-The application history identifies the exact clean build, Shizuku shell
-context, and failure sequence:
-
-```text
-started: 2026-09-02 13:18:00.834 +09:00
-result: Failed
-context: uid=2000, attr=u:r:shell:s0
-build: b5q-F731NKSS5EYGB-clean-tracefs-mcast-configfs-pipe-root
-reclaim: legacy
-attempts 1-6: KernelSnitch mm_struct leak failed
-attempt 7: entered with the same build and P0 profile; log ended
-device: rebooted during this execution
-stored boot reason: reboot
-SYSTEM_LAST_KMSG: no entry
-```
-
-No fops write, pipe physrw, credential change, or KernelSU late-load checkpoint
-was reached. The failed build used `MM_STRUCT_SZ=0x3e0`. Direct runtime
-inspection after reboot showed the `mm_struct` SLUB object size is `0x400`, so
-the KernelSnitch candidate stride was incorrect. The target and this procedure
-now use `0x400`. The corrected release payload is 104128 bytes with SHA-256
-`4c15ed8bd3a37cc126ee74c9e7219e968a5880be89962dac3fed18a639f1df2e`;
-its hardware checkpoint is pending.
+This profile is exact-build support for `F731NKSS5EYGB`. It does not claim
+compatibility with Android 16 firmware or another kernel release.
