@@ -12,8 +12,8 @@ payload symbols, structure layouts, tracefs slide anchor, MCAST stack overlay,
 P0 fingerprint, release payload, exact-source KernelSU module, and matching
 late-load binary have been derived and built.
 
-All static, symbol, relocation, manifest, and reproducibility gates recorded
-below pass. Hardware execution through Root My Galaxy is the remaining gate.
+All static, symbol, relocation, manifest, reproducibility, and Root My Galaxy
+hardware execution gates recorded below pass.
 
 ## 1. Runtime identity
 
@@ -502,12 +502,41 @@ KO vermagic and reproducibility: PASS
 ksud embedded-asset identity and reproducibility: PASS
 support feed JSON/path/size validation: PASS
 stock integrity state after collection: PASS
+payload hardware root checkpoint: PASS
+KernelSU late-load hardware checkpoint: PASS
 ```
 
-Remaining gate:
+## 12. Hardware validation
+
+The exact Android 16 FZA1 device completed the Root My Galaxy application flow
+with the published payload and exact-source KernelSU pair on 2026-09-02.
+
+The successful hardware checkpoints were:
 
 ```text
-Root My Galaxy payload and KernelSU late-load hardware execution on FZA1
+build label: b5q-F731NTBS5FZA1-controlled-classic-pipe-root
+KASLR slide: 0x00150000
+fake fops owner: 0x0000000000000000
+configfs write/read: 35/35
+pipe slab cache match: 1
+pipe_buffer probe: found
+physical read/write: PASS
+physical 64-bit read/write: PASS
+bootstrap UID: 2000 -> 0
+KernelSU staging: PASS
+KernelSU control channel: PASS
+KernelSU activation: PASS
+```
+
+Live state after installation:
+
+```text
+kernelsu module: Live
+SELinux: Enforcing
+verified boot state: green
+flash locked: 1
+verity mode: enforcing
+Knox warranty bit: 0
 ```
 
 This profile is exact-build support for Android 16 `F731NTBS5FZA1` and kernel
