@@ -335,7 +335,8 @@ Therefore:
 
 No pselect shift or target-specific timing override is present. The app payload
 selects the repository's shared controlled `mm_struct` reclaim and SKB
-head-shaping route with its common `0x8e80` shaping geometry.
+head-shaping route with its common `0x8e80` shaping geometry. The later classic
+pipe-buffer preparation retains the repository default `0x10000` SKB size.
 
 ## 8. P0 fingerprint and target verification
 
@@ -355,8 +356,8 @@ The clean target header is:
 
 ```text
 src/targets/b5q-F731NTBS5FZA1/target.h
-size: 9577
-SHA-256: be54cd7a0a3d489dbb0d5b39d730f28b7d779a14b61257b28e5305159c29c91b
+size: 9602
+SHA-256: 9f5774aba2f780bf42a6f4f3172040647cd1cbd5fd9636c3267d19e17117d216
 ```
 
 The automated exact-target comparison passed:
@@ -377,11 +378,11 @@ The release target was built with Android NDK r29 (`29.0.14206865`):
 ```text
 artifact: artifacts/b5q-F731NTBS5FZA1/cve-2026-43499-app.so
 size: 104128
-SHA-256: 3cd73e65efd9fd48044189ff81e6f62d3967e2cd0250c7add8b602f49d38b972
+SHA-256: 53de5d090511d1cef1dbd0590407063be75cce1458ea0c32dbb155ddb072a10f
 format: ELF64 little-endian AArch64 shared object
 Android API: 35
 NDK: r29 / 29.0.14206865
-build label: b5q-F731NTBS5FZA1-controlled-tracefs-mcast-configfs-pipe-root
+build label: b5q-F731NTBS5FZA1-controlled-classic-pipe-root
 ```
 
 Two builds from cleaned target directories were byte-identical.

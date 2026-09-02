@@ -27,7 +27,7 @@
 
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 #define BUILD_VARIANT_LABEL \
-  "b5q-F731NTBS5FZA1-controlled-tracefs-mcast-configfs-pipe-root"
+  "b5q-F731NTBS5FZA1-controlled-classic-pipe-root"
 #define APP_PHYS_P0_ORACLE 1
 #define APP_TRACEFS_SLIDE 1
 #define APP_CLOSED_FOPS_ROUTE 1
@@ -53,6 +53,7 @@
 /* Shared controlled-reclaim and SKB head-shaping contract. */
 #define SKB_DATA_DELTA (-0xe80LL)
 #define SKB_SEND_SIZE 0x8e80
+#define PIPE_PREP_SKB_SEND_SIZE 0x10000
 #define SKB_RECLAIM_SENDS 64
 #define APP_SLIDE_RECLAIM_SENDS 64
 #define PIPE_MAX_ATTEMPTS 12
