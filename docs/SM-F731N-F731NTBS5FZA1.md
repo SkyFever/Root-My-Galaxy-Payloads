@@ -333,7 +333,9 @@ Therefore:
 #define MCAST_WAITER_OFF 0x78
 ```
 
-No pselect shift or target-specific timing/reclaim override is present.
+No pselect shift or target-specific timing override is present. The app payload
+selects the repository's shared controlled `mm_struct` reclaim and SKB
+head-shaping route with its common `0x8e80` shaping geometry.
 
 ## 8. P0 fingerprint and target verification
 
@@ -353,8 +355,8 @@ The clean target header is:
 
 ```text
 src/targets/b5q-F731NTBS5FZA1/target.h
-size: 8938
-SHA-256: a3a0d5a95f6acad0114de4a4f10acc21dc8754c1f2a2b073ce68c8aa0e301bd0
+size: 9577
+SHA-256: be54cd7a0a3d489dbb0d5b39d730f28b7d779a14b61257b28e5305159c29c91b
 ```
 
 The automated exact-target comparison passed:
@@ -375,11 +377,11 @@ The release target was built with Android NDK r29 (`29.0.14206865`):
 ```text
 artifact: artifacts/b5q-F731NTBS5FZA1/cve-2026-43499-app.so
 size: 104128
-SHA-256: 0676cc3548fc7af160b87a582f1640e008fe1da35eaf180ac062338076c1f3c7
+SHA-256: 3cd73e65efd9fd48044189ff81e6f62d3967e2cd0250c7add8b602f49d38b972
 format: ELF64 little-endian AArch64 shared object
 Android API: 35
 NDK: r29 / 29.0.14206865
-build label: b5q-F731NTBS5FZA1-clean-tracefs-mcast-configfs-pipe-root
+build label: b5q-F731NTBS5FZA1-controlled-tracefs-mcast-configfs-pipe-root
 ```
 
 Two builds from cleaned target directories were byte-identical.
