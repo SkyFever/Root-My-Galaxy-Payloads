@@ -300,6 +300,24 @@
         "url": "kernelsu/ksud-b5q-F731NKSS5EYGB-kdp",
         "size": 4776064
       }
+    },
+    {
+      "payloadId": "b5q-F731NTBS5FZA1",
+      "displayName": "Galaxy Z Flip5 SM-F731N | Kernel 5.15.178 | F731NTBS5FZA1",
+      "models": [
+        "SM-F731N"
+      ],
+      "kernelVersions": [
+        "5.15.178"
+      ],
+      "exploit": {
+        "url": "artifacts/b5q-F731NTBS5FZA1/cve-2026-43499-app.so",
+        "size": 104128
+      },
+      "kernelsu": {
+        "url": "kernelsu/ksud-b5q-F731NTBS5FZA1-kdp",
+        "size": 4776064
+      }
     }
   ]
 }

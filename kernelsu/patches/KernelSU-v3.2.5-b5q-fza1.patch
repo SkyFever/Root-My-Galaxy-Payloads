@@ -1,0 +1,11 @@
+diff --git a/kernel/compat/samsung_kdp.c b/kernel/compat/samsung_kdp.c
+index 4f8414c..1f06e6c 100644
+--- a/kernel/compat/samsung_kdp.c
++++ b/kernel/compat/samsung_kdp.c
+@@ -29,4 +29,4 @@
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
+-typedef long (*inc_rlimit_ucounts_t)(struct ucounts *ucounts, enum rlimit_type type, long value);
+-typedef bool (*dec_rlimit_ucounts_t)(struct ucounts *ucounts, enum rlimit_type type, long value);
++typedef long (*inc_rlimit_ucounts_t)(struct ucounts *ucounts, enum ucount_type type, long value);
++typedef bool (*dec_rlimit_ucounts_t)(struct ucounts *ucounts, enum ucount_type type, long value);
+ #endif
