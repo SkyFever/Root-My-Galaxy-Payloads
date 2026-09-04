@@ -318,6 +318,20 @@
         "url": "kernelsu/ksud-b5q-F731NTBS5FZA1-kdp",
         "size": 4776064
       }
-    }
+    },
+    {
+      "payloadId": "q7q-F966NKSUCZZHP",
+      "displayName": "Galaxy Z Fold 7 (SM-F966N) | Kernel 6.6.127",
+      "models": ["SM-F966N"],
+      "kernelVersions": ["6.6.127"],
+      "exploit": {
+        "url": "artifacts/q7q-F966NKSUCZZHP/cve-2026-43499-app.so",
+        "size": 104128
+      },
+      "kernelsu": {
+        "url": "kernelsu/ksud-s25u-kdp",
+        "size": 6407096
+      }
+    },
   ]
 }
