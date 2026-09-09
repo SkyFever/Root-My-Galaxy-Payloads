@@ -2419,8 +2419,7 @@ static int slide_leak_physical_base(void) {
     pr_error("p0 physical pipe preparation failed\n");
     return 0;
   }
-#if (defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION) || \
-    (defined(APP_P0_MULTI_GATE_RETRY) && APP_P0_MULTI_GATE_RETRY)
+#if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
 #ifdef APP_SLIDE_FRESH_PAGE_ATTEMPTS
   const int fresh_page_attempts = APP_SLIDE_FRESH_PAGE_ATTEMPTS;
 #else
