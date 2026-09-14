@@ -179,7 +179,8 @@ static atomic_int slide_pselect_last_errno;
 static atomic_uint_fast64_t slide_pselect_last_elapsed_usec;
 #endif
 #if (defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION) || \
-    (defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE)
+    (defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE) || \
+    (defined(APP_PSELECT_START_ANCHORED_SYNC) && APP_PSELECT_START_ANCHORED_SYNC)
 static atomic_uint_fast64_t slide_pselect_started_ns;
 #endif
 #if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
@@ -1050,7 +1051,8 @@ static void slide_reset_consume_state(void) {
   atomic_store(&slide_pselect_last_elapsed_usec, 0);
 #endif
 #if (defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION) || \
-    (defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE)
+    (defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE) || \
+    (defined(APP_PSELECT_START_ANCHORED_SYNC) && APP_PSELECT_START_ANCHORED_SYNC)
   atomic_store(&slide_pselect_started_ns, 0);
 #endif
 }
@@ -1131,17 +1133,19 @@ RMG_RACE_INLINE void slide_pselect_stack_copy(void) {
   };
   struct timespec *timeoutp = &timeout;
 
-#if defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE
+#if (defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE) || \
+    (defined(APP_PSELECT_START_ANCHORED_SYNC) && APP_PSELECT_START_ANCHORED_SYNC)
   atomic_store(&slide_consume_go, 1);
   /*
-   * The reference waiter publishes the route sequence and then enters
-   * pselect without waiting for the consumer's acknowledgement.  The
-   * consumer observes this sequence first and waits for the timestamp below.
+   * Publish the route before entering pselect.  Anchored-sync consumers wait
+   * for slide_pselect_started_ns and schedule relative to that timestamp,
+   * while pselect itself remains blocked until its original timeout/return.
    */
 #endif
   size_t pselect_started = gettime_ns();
 #if (defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION) || \
-    (defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE)
+    (defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE) || \
+    (defined(APP_PSELECT_START_ANCHORED_SYNC) && APP_PSELECT_START_ANCHORED_SYNC)
   atomic_store(&slide_pselect_started_ns, pselect_started);
 #endif
   for (int index = 0; index < slide_route_syscall_pad; index++) {
@@ -1660,7 +1664,8 @@ static int slide_wait_for_pselect_blocked(int tid, size_t timeout_usec,
 #endif
 
 void *slide_consumer_thread(void *arg __attribute__((unused))) {
-#if !(defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE)
+#if !((defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE) || \
+      (defined(APP_PSELECT_START_ANCHORED_SYNC) && APP_PSELECT_START_ANCHORED_SYNC))
   disable_rseq_for_thread();
 #endif
   pin_to_core(CONSUMER_CORE);
@@ -1757,7 +1762,8 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
 #endif
     }
 #else
-#if defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE
+#if (defined(APP_S928_STABLE_RACE) && APP_S928_STABLE_RACE) || \
+    (defined(APP_PSELECT_START_ANCHORED_SYNC) && APP_PSELECT_START_ANCHORED_SYNC)
     if (seq == 1) {
       useconds_t delay_usec = slide_enter_delay_usec();
       uint64_t pselect_started_ns = 0;
@@ -1785,6 +1791,13 @@ void *slide_consumer_thread(void *arg __attribute__((unused))) {
           __asm__ volatile("yield" ::: "memory");
         }
       }
+      #if defined(APP_PSELECT_START_ANCHORED_SYNC) && APP_PSELECT_START_ANCHORED_SYNC
+            uint64_t trigger_age_usec =
+                (gettime_ns() - pselect_started_ns) / 1000ULL;
+            pr_info("slide pselect anchored delay_usec=%u trigger_age_usec=%llu\n",
+                    (unsigned int)delay_usec,
+                    (unsigned long long)trigger_age_usec);
+      #endif
     }
 #else
     slide_wait_before_consume(seq);
